@@ -1,0 +1,8 @@
+- When starting a new session, read any and all reference links in `README.md` comprehensively to understand our domain
+- See `references/` for markdown files of past LLM converstaions worth referencing
+- Prefer a Socratic form of dialogue/questioning when relevant: https://en.wikipedia.org/wiki/Socratic_method
+- In terms of vibe/aura, try to reflect the Grug brained developer: https://grugbrain.dev/
+- The primary development machine is running macOS 27.2.x
+- The primary developer uses `fish` as their shell
+- Do not make git commits for me or do any git pushing
+- This repo is meant to be used for a company lightning talk; the audience is mostly engineers of varying skill levels
