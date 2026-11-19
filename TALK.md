@@ -33,7 +33,7 @@ Slide 6 is the easiest to cut.
 | 7 | Lean | Theorem statements only |
 | 8 | Does the spec match the code? | The mapping table above |
 
-A backup slide after slide 8, "What TLA+ and Lean can and can't do", is for questions.
+Three backup slides after slide 8 are for questions: "What TLA+ and Lean can and can't do", "TLA+ and Lean, symbol by symbol", and "Time and clocks".
 
 ### 1. The bug in plain words
 
@@ -181,11 +181,69 @@ Neither tool can tell you whether you wrote the right property. `Conservation` p
 
 TLA+ finds design bugs at small sizes, with no proof to write. Lean proves the design at every size, and you write the proof. Start with TLA+, and reach for Lean once TLC stops finding bugs and you need the guarantee at every size.
 
+### Backup slide: TLA+ and Lean, symbol by symbol
+
+These tables only cover what the two files use. A blank cell means that file has no counterpart. The full meanings are in the glossary at the top of `tla/Library.tla` and `lean/Library.lean`.
+
+#### Symbols
+
+| Meaning | TLA+ | Lean |
+|---|---|---|
+| and | `/\` | `∧` |
+| or | `\/` | `∨` |
+| not | | `¬` |
+| implies, or "function to" | | `→` |
+| equals | `=` | `=` |
+| less than or equal to, greater than | `<=`, `>` | `≤`, `>` |
+| there exists | `\E p \in S : ...` | `∃ p, ...` |
+| is in | `\in`, for a set | `∈`, for a list |
+| is not in | `\notin`, for a set | `∉`, for a list |
+| add `p` | `loans \union {p}` | `p :: loans` |
+| remove `p` | `looked \ {p}` | `looked.erase p` |
+| empty | `{}`, an empty set | `[]`, an empty list |
+| the value after a step | `x'`, an operator | `s'`, just a name |
+| build from parts | `<<a, b>>`, a tuple | `⟨a, b⟩`, a structure or proof |
+| every step follows the rules | `[][N]_vars` | `Reachable`, which we wrote ourselves |
+| run a tactic on every goal | | `<;>` |
+| short name for a constructor | | `.init`, `.step` |
+| line comment | `\*` | `--` |
+| block or doc comment | `(* ... *)` | `/-- ... -/` |
+
+#### Keywords
+
+| Meaning | TLA+ | Lean |
+|---|---|---|
+| group the file's definitions | `MODULE Library` ... `====` | `namespace Library` ... `end Library` |
+| use another module | `EXTENDS Naturals, FiniteSets` | |
+| numbers | `Naturals` | `Nat`, `Int` |
+| how many | `Cardinality(loans)` | `loans.length` |
+| values picked from outside | `CONSTANTS`, set in the `.cfg` file | parameters like `(copies : Nat)`, and `variable` |
+| the state | `VARIABLES` | `structure State` |
+| define a name | `==` | `def ... :=` |
+| keep the rest of the state the same | `UNCHANGED` | `{ s with f := v }` |
+| a type built from cases | | `inductive` |
+| the property to check | `INVARIANT` in the `.cfg` file | the statement of a `theorem` |
+| prove it | | `by`, `induction`, `grind`, `have`, `exact` |
+
+### Backup slide: time and clocks
+
+The demo has no clock, but real application logic often does. Examples are a hold that expires after 3 days, a lease timeout, or comparing timestamps from two servers. Neither tool reads a real clock. Both treat time as data in the model.
+
+| | TLA+ | Lean |
+|---|---|---|
+| What "time" means by default | A behavior is a sequence of states, and each step moves it forward. `[][Next]_vars` in our spec already says "always". | Nothing built in. You define steps yourself, like `Reachable`, or a trace as a function from step number to state. |
+| "Always" and "eventually" | Built-in operators. `[]` always, `<>` eventually, `~>` leads to. | You write them out. "Always" is "for every step `n`", and "eventually" is "for some step `n`". |
+| Making progress | Fairness conditions, `WF` and `SF`, rule out a system that stops taking steps forever. TLC can check "eventually" properties with them. | No fairness library. You state the progress assumption yourself and use it in the proof. |
+| Clock time, like "expires after 3 days" | Add a `now` variable and a `Tick` step that increases it. TLC needs a bound, like "`now` stays under 10", so the model stays finite. | Add a `now` field and a step that increases it. A proof can cover any amount of time, with no bound. |
+| Clocks on different machines | Give each machine its own clock variable, and let them drift apart by any amount up to a bound. TLC tries every ordering of their steps. Logical clocks, like Lamport or vector clocks, are common in specs. | Same model, but the proof covers any number of machines and any amount of drift within the bound. |
+
+Both tools share one limit. If the model says "clocks drift by at most 1 second," every result assumes that. If the real servers drift by 5 seconds, the check or proof says nothing about them. A human has to decide that bound and keep it true in production, the same way a human owns `NeverOverLent`.
+
 ## Left out on purpose
 
 The talk leaves these out to keep the demo small.
 
-- Liveness and fairness, for example "everyone on the waitlist eventually gets the book"
+- Liveness and fairness in a running example, for example "everyone on the waitlist eventually gets the book". The time and clocks backup slide covers the idea.
 - Hold queues, multiple books, and per-patron limits
 - Stateful property testing with interleaved commands, which StreamData doesn't support
 - An example of a spec that disagrees with its code

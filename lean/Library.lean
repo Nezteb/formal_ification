@@ -19,6 +19,7 @@ Each symbol's name, then how to type it with the Lean editor extension.
 - `≤` "less than or equal to". Type `\le`.
 - `⟨a, b⟩` "angle brackets". They build a structure or proof from its parts, in order. Type `\<` and `\>`.
 - `p :: l` "cons". The list `l` with `p` added to the front.
+- `[]` the empty list. `l.length` is how many items `l` has, and `l.erase p` is `l` without `p`.
 - `s'` "s prime". The state after a step. The `'` is part of the name, like TLA+'s primes.
 - `t1 <;> t2` runs tactic `t2` on every goal that `t1` leaves.
 - `.init`, `.step` are short for `Reachable.init` and `Reachable.step`, when Lean can tell the type.
@@ -28,7 +29,7 @@ Each symbol's name, then how to type it with the Lean editor extension.
 - `Nat` whole numbers from 0, `Int` integers, `List Nat` a list of `Nat`s.
 - `namespace X` ... `end X` groups names under `X`.
 - `structure` a record type with named fields.
-- `def` a definition. `: Prop` means it defines a true-or-false statement.
+- `def` a definition. `(copies : Nat)` is a parameter named `copies` of type `Nat`, and `: Prop` means it defines a true-or-false statement.
 - `inductive` a type defined by the ways to build it. `Reachable` has two: `init` and `step`.
 - `{ s with f := v }` a copy of `s` with field `f` changed.
 - `variable` declares arguments that every theorem below takes automatically.
@@ -36,7 +37,7 @@ Each symbol's name, then how to type it with the Lean editor extension.
 - `by` starts a proof written as tactics, which are commands that build it.
 - `induction h` prove it for `init`, then for each `step`.
 - `grind` Lean's built-in automation. The names in `[...]` are definitions it may unfold.
-- `have x : T := ...` proves a step `T` and names it `x`
+- `have x : T := ...` proves a step `T` and names it `x`.
 - `exact` finishes the proof with the given term.
 - `/-- ... -/` a doc comment, and `--` a line comment.
 -/

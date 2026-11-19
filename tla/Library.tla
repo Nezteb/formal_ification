@@ -6,33 +6,34 @@
 Symbols. TLA+ is written in ASCII. Each line shows the ASCII, the name of
 the math symbol it stands for in quotes, and what it means.
 
-  /\                 "wedge", and. A list of /\ lines means all of them are true.
-  \/                 "vee", or.
-  =                  equals. It compares, it doesn't assign.
-  <=  >              less than or equal to, greater than.
-  x'                 "x prime", the value of x after the step.
-  \in                "element of", is in the set.
-  \notin             "not an element of", is not in the set.
-  \union             "cup", set union. loans \union {p} adds p.
-  \                  set difference. looked \ {p} removes p.
-  {}  {p}            the empty set, and the set holding just p.
-  <<a, b>>           "angle brackets", a tuple.
-  \E p \in S : ...   "there exists", some p in S makes ... true.
-  [][N]_vars         "box", always. Every step is an N step, or leaves vars unchanged.
-  \*                 a line comment.
+  `/\`                 "wedge", and. A list of `/\` lines means all of them are true.
+  `\/`                 "vee", or.
+  `=`                  equals. It compares, it doesn't assign.
+  `<=`  `>`            less than or equal to, greater than.
+  `x'`                 "x prime", the value of `x` after the step.
+  `\in`                "element of", is in the set.
+  `\notin`             "not an element of", is not in the set.
+  `\union`             "cup", set union. `loans \union {p}` adds `p`.
+  `\`                  set difference. `looked \ {p}` removes `p`.
+  `{}`  `{p}`          the empty set, and the set holding just `p`.
+  `<<a, b>>`           "angle brackets", a tuple.
+  `\E p \in S : ...`   "there exists", some `p` in `S` makes `...` true.
+  `[][N]_vars`         "box", always. Every step is an `N` step, or leaves `vars` unchanged.
+  `\*`                 a line comment.
+  `(* ... *)`          a block comment, like this one.
 
 Keywords.
 
-  MODULE      names the file. ---- lines are separators, and ==== ends it.
-  EXTENDS     imports modules. Naturals has numbers, FiniteSets has Cardinality, which is a set's size.
-  CONSTANTS   values the .cfg file picks, like Patrons and Copies.
-  VARIABLES   the state, which changes from step to step.
-  ==          defines a name, like Init or Look(p).
-  UNCHANGED   these variables keep their value this step.
-  Init        the starting state. Look, Take, Borrow, Return are steps; these are our names, not keywords.
+  `MODULE`      names the file. `----` lines are separators, and `====` ends it.
+  `EXTENDS`     imports modules. `Naturals` has numbers, `FiniteSets` has `Cardinality`, which is a set's size.
+  `CONSTANTS`   values the `.cfg` file picks, like `Patrons` and `Copies`.
+  `VARIABLES`   the state, which changes from step to step.
+  `==`          defines a name, like `Init` or `Look(p)`.
+  `UNCHANGED`   these variables keep their value this step.
+  `Init`        the starting state. `Look`, `Take`, `Borrow`, `Return` are steps; these are our names, not keywords.
 
-The .cfg files set CONSTANTS, pick the SPECIFICATION to run, and list each
-INVARIANT, a property TLC checks in every state it reaches.
+The `.cfg` files set `CONSTANTS`, pick the `SPECIFICATION` to run, and list
+each `INVARIANT`, a property TLC checks in every state it reaches.
 ***************************************************************************)
 
 EXTENDS Naturals, FiniteSets
