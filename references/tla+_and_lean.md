@@ -4,43 +4,43 @@
 
 ## Short version
 
-They're both formal methods tools, but they live at opposite ends of the spectrum. **TLA+ is a specification language for describing how concurrent and distributed systems behave over time, and it's normally checked by exhaustively exploring a small model.** **Lean is a general-purpose proof assistant: a dependently typed language in which theorems and programs are the same kind of object, and proofs are checked in full generality.**
+Both are formal methods tools, and they sit at opposite ends. TLA+ is a specification language for how concurrent and distributed systems behave over time. You check a TLA+ spec by exploring every state of a small model. Lean is a general-purpose proof assistant. It is a dependently typed language where theorems and programs are the same kind of object, and its proofs hold for every case.
 
-So the usual division of labor is: TLA+ to find design bugs cheaply, Lean to prove things that must hold for all cases.
+Teams usually use TLA+ to find design bugs cheaply and Lean to prove things that must hold for all cases.
 
-## Side-by-side
+## Side by side
 
-| | TLA+ | Lean (4) |
+| | TLA+ | Lean 4 |
 |---|---|---|
-| **Creator / origin** | Leslie Lamport, ~1999 | Leonardo de Moura (Microsoft Research), 2013; Lean 4 ~2021, now under the Lean FRO |
-| **What it is** | Specification language (plus PlusCal, an algorithm-style front end) | Interactive theorem prover *and* general-purpose programming language |
-| **Logical foundation** | Untyped first-order logic + ZF set theory, extended with the Temporal Logic of Actions | Dependent type theory (Calculus of Inductive Constructions); proofs are terms, checked by a small kernel |
-| **Core object** | A state machine: variables, `Init`, `Next`, plus temporal formulas | A term inhabiting a type; a theorem is a type, a proof is a term of it |
-| **Native notion of time** | Yes — `[]`, `<>`, `~>`, fairness, stuttering steps, refinement | No — you encode transition systems yourself (relations, traces, coinduction) |
-| **Standard verification method** | Model checking: TLC (explicit-state) or Apalache (symbolic/SMT, bounded) | Interactive proof script + tactics (`simp`, `omega`, `linarith`, `grind`), checked by the kernel |
-| **Generality of result** | Holds for the finite model you checked (e.g. 3 nodes, 2 values) — a bug found is real, absence of bugs is only evidence | Holds for all parameters, if the proof is complete |
-| **Automation** | High, but bounded: push a button, get a counterexample trace | Low-to-moderate: heavy automation tactics exist, but you write the proof |
-| **Nondeterminism & interleavings** | First-class; unbounded nondeterminism is normal | Must be modeled (relations, monads, an explicit operational semantics) |
-| **Executability** | Specs are generally not executable; you simulate or model-check them | Lean is a real programming language; terms evaluate, and code can be proved correct and run |
-| **Proof support** | TLAPS exists (Zenon/Isabelle/SMT backends) but is comparatively rarely used and limited | The whole point of the tool |
-| **Type checking as a safety net** | Untyped; mistakes surface as model-checking errors or weird set-theoretic nonsense | Strong dependent typing catches errors at elaboration |
-| **Ecosystem** | TLC, Apalache, TLAPS, VS Code toolbox, CommunityModules (fairly small) | Mathlib (over a million lines of formalized math), Lake, Batteries, a large and fast-growing library ecosystem |
-| **Typical users** | Distributed-systems and protocol engineers (AWS S3/DynamoDB, Azure Cosmos DB, MongoDB, Intel) | Mathematicians, PL researchers, and verification engineers (e.g. AWS's Cedar policy language is verified in Lean) |
-| **Effort profile** | Days to write a useful spec; minutes to check | Weeks to months to learn and to complete a nontrivial proof |
-| **Character** | "Lightweight" formal methods — cheap, high bug-per-hour yield | "Heavyweight" — expensive, but delivers guarantees |
+| Creator | Leslie Lamport, about 1999 | Leonardo de Moura at Microsoft Research, 2013. Lean 4 arrived about 2021 and is now run by the Lean FRO. |
+| What it is | A specification language, plus PlusCal, a front end that reads like an algorithm | An interactive theorem prover and a general-purpose programming language |
+| Logic | Untyped first-order logic and ZF set theory, extended with the Temporal Logic of Actions | Dependent type theory, the Calculus of Inductive Constructions. Proofs are terms, and a small kernel checks them. |
+| Core object | A state machine with variables, `Init`, `Next`, and temporal formulas | A term with a type. A theorem is a type, and a proof is a term of that type. |
+| Time built in | Yes. `[]`, `<>`, `~>`, fairness, stuttering steps, and refinement. | No. You encode transition systems yourself, with relations, traces, or coinduction. |
+| How you check it | Model checking with TLC, which lists states, or Apalache, which uses an SMT solver up to a fixed bound | A proof script with tactics like `simp`, `omega`, `linarith`, and `grind`, checked by the kernel |
+| What a result covers | The finite model you checked, for example 3 nodes and 2 values. A bug it finds is real. Finding none is evidence, not proof. | Every parameter, once the proof is complete |
+| Automation | High, but bounded. Run TLC and get a counterexample trace. | Low to moderate. Strong tactics exist, but you write the proof. |
+| Nondeterminism and interleavings | Built in. Unbounded nondeterminism is normal. | You model them, with relations, monads, or an explicit operational semantics. |
+| Runs as code | No. You simulate or model-check a spec. | Yes. Terms evaluate, and you can prove code correct and run it. |
+| Proofs | TLAPS exists, with Zenon, Isabelle, and SMT back ends, but few people use it and it has limits | The main purpose of the tool |
+| Type checking | None. Mistakes show up as model-checking errors or odd set-theory results. | Dependent types catch errors while you write |
+| Ecosystem | TLC, Apalache, TLAPS, the VS Code extension, and CommunityModules. It is fairly small. | Mathlib, with over a million lines of formalized math, plus Lake, Batteries, and a large, growing set of libraries |
+| Typical users | Distributed-systems and protocol engineers at AWS (S3, DynamoDB), Azure Cosmos DB, MongoDB, and Intel | Mathematicians, programming-language researchers, and verification engineers. AWS verified its Cedar policy language in Lean. |
+| Effort | Days to write a useful spec, minutes to check it | Weeks to months to learn Lean and finish a nontrivial proof |
+| Weight | Lightweight. It is cheap and finds many bugs per hour. | Heavyweight. It is expensive, and it gives guarantees. |
 
-## The deeper contrast
+## How they differ
 
-**Different question being asked.** A TLA+ spec asks *"is there any execution, under any interleaving, timing, or failure pattern, that violates my invariant or my liveness property?"* Its whole design is oriented around concurrency: unbounded nondeterminism, stuttering, fairness, refinement between an abstract spec and a concrete one. Lean asks *"can I construct a proof object of this proposition?"* — and concurrency isn't special there; it's just one more thing to model.
+**They ask different questions.** A TLA+ spec asks whether any execution violates an invariant or a liveness property, under any interleaving, timing, or failure. The language is built around concurrency, with unbounded nondeterminism, stuttering, fairness, and refinement between an abstract spec and a concrete one. Lean asks whether you can build a proof of a statement. Concurrency gets no special treatment in Lean. It is one more thing to model.
 
-**Different notion of "verified."** TLC's answer is empirical in a precise sense: it explores the entire reachable state graph *of a finite instance*. That catches the overwhelming majority of real bugs in protocol designs (the classic result is that most distributed-system bugs show up at 2–3 nodes), but it doesn't prove anything about 100 nodes with unbounded sequence numbers. Lean's answer is deductive and complete, at the cost of you doing the work. This is exactly why you can't just say "Lean is strictly better" — for a Monday-morning design review of a replication protocol, a TLA+ spec is a far better use of an afternoon than a Lean development.
+**They mean different things by "verified."** TLC explores every reachable state of a finite instance. That catches most real bugs in protocol designs, since most distributed-system bugs show up with 2 or 3 nodes. It proves nothing about 100 nodes with unbounded sequence numbers. A Lean proof covers every case, and you do the work. So Lean isn't strictly better. For a design review of a replication protocol, an afternoon of TLA+ gets you more than an afternoon of Lean.
 
-**Refinement vs. verification.** TLA+ has refinement mapping built into its idiom: prove (or check) that your detailed spec implements a simple abstract one. Lean can express the same thing (a simulation/refinement relation between transition systems), but you build the theory yourself. Conversely, Lean's Mathlib gives you real analysis, algebra, and topology for free — TLA+ has essentially no mathematical library, because you rarely need one.
+**TLA+ has refinement built in.** A TLA+ user checks or proves that a detailed spec implements a simple abstract one. Lean can express the same relation between two transition systems, but you build the theory yourself. Mathlib gives Lean real analysis, algebra, and topology. TLA+ has almost no math library, and its users rarely need one.
 
-**They compose.** The literature is full of hybrid approaches: model-check a TLA+ spec to shake out design bugs, then formalize the eventual algorithm and its correctness proof in Lean (or Coq/Rocq, Isabelle, F\*) for the guarantee. Some projects even generate or check TLA+-style obligations from proof assistants. And PlusCal's imperative style has a rough analogue in Lean's `do` notation, though the resemblance is superficial.
+**People use them together.** A common pattern is to model-check a TLA+ spec to find design bugs, then prove the final algorithm correct in Lean, Coq (now Rocq), Isabelle, or F\*. Some projects generate TLA+-style proof obligations from proof assistants. PlusCal's imperative style looks a little like Lean's `do` notation, but the two work differently.
 
-## Which to reach for
+## Which to use
 
-- **Use TLA+** when the artifact is a *design*: a protocol, a distributed algorithm, a cache-coherence scheme, a cloud service's consistency model. You want counterexample traces fast, and you're willing to accept "verified for N=3."
-- **Use Lean** when you need a *proof*: a mathematical theorem, a compiler or cryptographic primitive's correctness, a type system's soundness, or a protocol property that must hold for arbitrary parameters. Also when the thing you're verifying is itself code, since Lean can be that code.
-- **Don't** pick Lean to explore a concurrency design (painful, slow feedback), and don't pick TLA+ expecting a theorem about all system sizes (TLAPS can get there, but it's a steep, thinly documented climb).
+- Use TLA+ when the thing you're checking is a design, such as a protocol, a distributed algorithm, a cache-coherence scheme, or a cloud service's consistency model. You get counterexample traces fast, and you accept "checked for N = 3."
+- Use Lean when you need a proof. Examples include a math theorem, a compiler's correctness, a cryptographic algorithm's correctness, a type system's soundness, or a protocol property that must hold for any parameters. Lean also fits when the thing you're checking is code, because Lean can be that code.
+- Don't use Lean to explore a concurrent design, because the feedback is slow. Don't use TLA+ to prove a theorem about every system size. TLAPS can do it, but it is hard to learn and has thin documentation.

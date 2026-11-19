@@ -2,24 +2,22 @@
 
 ---
 
-I'll check the current state of tooling for both directions, since this ecosystem moves fairly fast.Good question — this is exactly the gap where formal methods projects die, and both ecosystems have very different (and unequally mature) answers. The clean way to organize it is by *strategy*, because the same four strategies exist on both sides but with wildly different tool support.
+Checking that code matches a spec is where many formal methods projects stall. TLA+ and Lean have different answers, and their tools are not equally mature. Both have the same four strategies.
 
 ## The four strategies
 
 | Strategy | What you trust | TLA+ maturity | Lean maturity |
 |---|---|---|---|
-| **1. Trace validation** — log the real system, check the log is a legal behavior of the spec | Runtime observation | ★★★★☆ (TLC/Apalache, actively used in production) | ★★☆☆☆ (DIY: executable checker in Lean) |
-| **2. Refinement proof** — write a low-level spec of the algorithm, prove it refines the abstract one; link to code by review | The low-level spec ↔ code correspondence | ★★★☆☆ (TLC refinement; TLAPS for the proof) | ★★★★★ (this is just what Lean does) |
-| **3. Extract/lift the code into the prover** — mechanically translate real code into the logic | The translator | ★☆☆☆☆ (no such thing) | ★★★☆☆ (Rust only: Aeneas/Charon, hax) |
-| **4. Generate/verify the code itself** — the deployed artifact is the verified artifact | The compiler / program logic | ★☆☆☆☆ | ★★★★☆ (write or verify in Lean, compile to C) |
+| 1. Trace validation. Log the real system, and check that the log is a legal behavior of the spec. | What you observe at runtime | 4 of 5. TLC and Apalache, used in production. | 2 of 5. You write your own checker in Lean. |
+| 2. Refinement proof. Write a low-level spec of the algorithm, prove it refines the abstract spec, and link it to the code by review. | That the low-level spec matches the code | 3 of 5. TLC checks refinement, and TLAPS proves it. | 5 of 5. This is what Lean is for. |
+| 3. Translate the code into the prover. A tool turns real code into the prover's logic. | The translator | 1 of 5. No such tool exists. | 3 of 5. Rust only, with Aeneas and Charon, or hax. |
+| 4. Ship the verified code. The deployed program is the program you proved. | The compiler or program logic | 1 of 5 | 4 of 5. Write or verify the code in Lean, then compile it to C. |
 
----
+## 1. Trace validation, the most used TLA+ approach
 
-## 1. Trace validation: the workhorse on the TLA+ side
+Trace validation works with any language, so C, Elixir, Go, and Rust all use the same recipe. You add logging to the code so it writes one JSON line per event (NDJSON). Then TLC runs a small validation spec that reads the log line by line. For each event, it checks that a spec action allows it and produces the logged state. If a line doesn't match, TLC reports the exact line where the code and the spec disagree.
 
-This is the dominant practical answer, and it's **language-agnostic** — which is why C, Elixir, Go, and Rust all use the same recipe. You instrument the implementation to emit a log of events (NDJSON), then run TLC over a small "validation spec" that consumes the log line by line and asserts each event is a legal spec action producing the recorded state. If the trace can't be matched, TLC hands you the exact line where implementation and spec diverged.
-
-The mechanism is a `Next` action that reads its own depth with `TLCGet("level")`, so no ghost index variable is needed:
+The validation spec's `Next` action reads its own step number with `TLCGet("level")`, so you don't need an extra index variable:
 
 ```tla
 Next ==
@@ -31,71 +29,61 @@ Next ==
     /\ Trace[level].hour = hr'         \* state after must match
 ```
 
-Two gotchas that bite everyone: the `.cfg` CONSTANTs must match the implementation's actual configuration, or validation fails for boring reasons, and you need a `VIEW` including `TLCGet("level")` so TLC doesn't mistake repeated states for a cycle and stop early.
+Two mistakes catch most people. The `CONSTANTS` in the `.cfg` file must match the code's real configuration, or validation fails for reasons unrelated to bugs. You also need a `VIEW` that includes `TLCGet("level")`, so TLC doesn't treat a repeated state as a cycle and stop early.
 
-**It works.** Markus Kuppe reports that in the Confidential Consortium Framework, trace validation found two significant data-loss bugs using only about a dozen executions. The broader framework for distributed programs — with vector clocks / happens-before for genuinely concurrent traces where no global observer exists — is written up by Merz and colleagues, and the CCF experience is in the "Smart Casual Verification" paper.
+Trace validation finds real bugs. Markus Kuppe reports that in the Confidential Consortium Framework (CCF), it found two serious data-loss bugs from about a dozen runs. Merz and colleagues describe the general method for distributed programs. It uses vector clocks to order events when no single observer sees everything. The CCF team describes their experience in the paper "Smart Casual Verification."
 
-**The main critique**, and you should take it seriously: a randomly sampled trace has a low probability of catching deep bugs, and trace validation is explicitly not exhaustive — it checks that *this subset* of executions conforms. The fix is that the spec should also *drive* test generation: take TLC/Apalache counterexamples and turn them into implementation inputs, which the CCF team did by hand and found straightforward. There's also a Java-specific toolkit that automates the log-extraction side.
+The main criticism is fair. A random trace rarely catches a deep bug, and trace validation only checks the runs you logged. The fix is to let the spec drive the tests as well. Take TLC or Apalache counterexamples and turn them into inputs for the real code. The CCF team did this by hand and found it easy. A Java toolkit also exists that automates collecting the logs.
 
-**Apalache** adds a symbolic variant (SMT-backed, bounded) and, more useful for this purpose, the **ITF** trace format — a JSON dialect that TLC, Apalache, and Quint all emit, with parsers in Rust, TypeScript, and Python. That makes "replay a model-checker counterexample against the real implementation" a language-independent plumbing problem rather than a research project.
+Apalache adds a symbolic checker, backed by an SMT solver and limited to a fixed number of steps. It also defines the ITF trace format, a JSON format that TLC, Apalache, and Quint all write. Rust, TypeScript, and Python have parsers for it. With ITF, replaying a model checker's counterexample against real code takes some glue code, not a research project.
 
-### Doing it in Elixir or C
+### In Elixir or C
 
-- **Elixir/BEAM**: you have better observability than most languages. Use `:dbg` / `:erlang.trace`, `Telemetry` handlers, or just structured `Logger` lines emitted *after* each state commit (log post-state, ideally both pre and post). One line of JSON per `GenServer.handle_call`. A `Task`-free single-process state machine maps trivially; for concurrent processes you need vector clocks or a serialization point, which the NDJSON manual explicitly flags as out of scope for the simple recipe.
-- **C**: same thing with a logging macro, but you must be careful about logging from inside critical sections and about the observer perturbing timing. For single-threaded state machines (parsers, protocol FSMs, drivers) this is very effective.
-- **Complementary and cheaper**: Erlang's `proper` has a `statem` module precisely for testing a stateful process against a model state machine — a lightweight, non-formal version of the same idea, and a good first step before writing TLA+.
+- **Elixir.** The BEAM shows you more of a running program than most platforms do. Use `:dbg` or `:erlang.trace`, `Telemetry` handlers, or structured `Logger` lines written after each state change. Log the state after the change, and ideally the state before it too, with one JSON line per `GenServer.handle_call`. A single-process state machine maps directly onto a spec. For concurrent processes, you need vector clocks or a single point that orders events. The simple NDJSON recipe doesn't cover that case.
+- **C.** Use a logging macro. Be careful about logging inside critical sections, and about logging changing the program's timing. This works well for single-threaded state machines like parsers, protocol state machines, and drivers.
+- **A cheaper first step.** Erlang's `proper` library has a `statem` module for testing a stateful process against a model state machine. It is an informal version of the same idea, and a good step before writing TLA+.
 
-**The honest caveat**: trace validation never proves the code equals the spec. It proves the code's *observed* behavior is *consistent with* the spec, which is a much weaker but often sufficient claim. And it silently assumes your mapping (which event means which action) is right — a wrong mapping yields false confidence.
+Trace validation never proves the code equals the spec. It shows that the code's observed behavior is consistent with the spec, which is a weaker claim but often enough. It also assumes your mapping from events to actions is right. A wrong mapping gives false confidence.
 
----
+## 2. Refinement, which both tools support to different degrees
 
-## 2. Refinement: the bridge that both tools support, unequally
+To show that code matches a spec, write a second, low-level spec that describes the algorithm as the code implements it. Then prove or check that it implements the abstract spec. The remaining risk is that the low-level spec doesn't match the code, and you reduce that with code review and trace validation.
 
-The structural answer to "does the code match the spec" is: **write a second, low-level spec that is a faithful description of the algorithm as implemented, then prove or check that it implements the abstract one.** The residual risk is localized to one hand-written artifact (low-level spec ↔ code), which you attack with code review plus trace validation.
+- **In TLA+**, this is the standard approach. You write `Impl` with concrete variables and steps, `Abs` with abstract ones, and a refinement mapping. Then you either model-check `Impl => Abs` with TLC, which is cheap but finite, or prove it with TLAPS. A TLAPS proof is a real theorem, but TLAPS has thin documentation and little industry use.
+- **In Lean**, you define both as transition systems, or as a `Step` relation, define a simulation relation, and prove `impl_step ⊆ abs_step ∘ R`. Lean handles this well, and the result composes and covers any parameters. The cost is that you build the theory yourself. Lean has no TLA+-style refinement library, no temporal operators, and no fairness. Here, Lean's lack of a built-in notion of time turns into real work.
 
-- **In TLA+**: this is idiomatic. You write `Impl` with concrete variables and steps, `Abs` with abstract ones, a refinement mapping, and either model-check `Impl => Abs` with TLC (cheap, finite) or prove it with **TLAPS** (a real theorem, but TLAPS is thin on documentation and rarely used in industry).
-- **In Lean**: you'd define both as transition systems (or a relational `Step` predicate), define a simulation/refinement relation, and prove `impl_step ⊆ abs_step ∘ R`. Lean is genuinely good at this, and you get compositionality and arbitrary parameters. The cost is that you're building the theory rather than importing it — Lean has no TLA+-style refinement library, no temporal operators, no fairness. This is where the "Lean has no native notion of time" gap from earlier becomes concrete work.
+## 3. Translating real code into the prover
 
----
+Lean can do this and TLA+ can't, but almost only for Rust.
 
-## 3. Lifting actual code into the prover
+- **Aeneas and Charon.** Charon compiles Rust to an intermediate form called LLBC. Aeneas translates that into a pure functional model in a proof assistant, with back ends for Lean, F\*, Coq, and HOL4. You write ordinary Rust with no annotations, translate it, and prove properties of the result in Lean. It handles real code, and Lean's website lists it as a use case.
+- **hax.** Another way to translate Rust into Lean or F\*. A 2026 experience report describes taking production Rust cryptography code to checked Lean 4 proofs. It combined Charon and Aeneas, or hax, with spec libraries from the verified zkEVM project.
 
-This is where Lean has capabilities TLA+ simply lacks, but almost entirely for **Rust**:
+C has no Lean-based option. The mature tools for C live elsewhere. CN adds separation-logic refinement types to C, built on a realistic semantics of ISO C. Others include RefinedC, VST, and Gillian in Coq, Frama-C and ACSL with Why3, VeriFast, and CBMC. There is even work on checking CN's own translation. People have asked for official Lean semantics for mainstream languages, including an open proposal for C#, so that work isn't done yet.
 
-- **Aeneas + Charon**: Charon compiles Rust to an intermediate representation (LLBC); Aeneas translates that to a pure functional model in a proof assistant. Backends exist for **Lean**, F\*, Coq, and HOL4. The workflow is: write ordinary Rust with no annotations, translate automatically, prove properties of the generated model in Lean. It handles real code, not a toy subset, and Lean's own site now documents it as a use case.
-- **hax**: an alternative Rust→Lean (and F\*) extraction path. A 2026 experience report describes a pipeline taking *production* Rust cryptographic code to machine-checked Lean 4 proofs, combining Charon/Aeneas or hax with spec libraries from the verified zkEVM work.
+Elixir has almost nothing. Lean has no formal semantics for the BEAM and no way to translate Elixir code. Your options are trace validation, model-based testing with `proper` or StreamData, and Dialyzer, plus writing the core logic in a language you can verify.
 
-**For C there is no Lean-native story.** The mature C program logics live elsewhere: CN (separation-logic refinement types for C, built on a realistic ISO C semantics, aimed at predictable automation), RefinedC, VST, and Gillian in Coq, Frama-C/ACSL with Why3, VeriFast, CBMC. There's even work on translation validation *for CN* itself. People are actively asking for official Lean semantics for mainstream languages (there's an open proposal for C#), which tells you the current state: not there yet.
+## 4. Ship the verified code
 
-**For Elixir there is essentially nothing.** No formal BEAM semantics in Lean, no extraction pipeline. Realistically your options are trace validation, `proper`/`StreamData` model-based testing, and possibly Dialyzer plus a hand-written core in a verifiable language.
+This gives the strongest guarantee, and it's why people put up with Lean's learning curve.
 
----
+- Lean 4 compiles to C, then to native code. A function you prove in Lean and compile is the function that ships. There is no translation step and no gap between a correct model and incorrect code. This is the normal Lean workflow, and it comes closest to solving the "does the code match the proof" problem, because there is no second program.
+- On the TLA+ side, the equivalent would be generating code from a spec, and nothing does that well. Apalache is a symbolic model checker that turns TLA+ into SMT constraints, not a compiler. Quint compiles to Apalache's format or to TLA+. All of these move toward checking, not toward shipped code. No TLA+ to C or TLA+ to Elixir compiler exists, and none is likely, because TLA+ specs are untyped, nondeterministic, and not meant to run.
 
-## 4. Make the verified artifact the deployed artifact
+## A recipe for Elixir, C, or anything else
 
-The strongest guarantee, and the reason people put up with Lean's learning curve:
+1. Write the spec in TLA+ and model-check it with TLC. It's cheap, and it finds design bugs.
+2. Add logging to the code so it writes NDJSON traces, and validate those traces with TLC against a `TraceSpec`. This is the main link between code and spec in any language, and it finds the most bugs for the effort.
+3. Feed TLC or Apalache counterexamples back as test inputs for the real code, using ITF. That turns "the model found a bug" into a regression test.
+4. For the parts that must be proved, such as a consensus core, a cryptographic algorithm, or a protocol invariant that must hold for any number of nodes, do one of these:
+   - Move that part to Rust and use Aeneas or hax to get it into Lean.
+   - Write it in Lean and compile it.
+   - For C, use CN, Frama-C, or VST instead of Lean.
+5. Keep a low-level TLA+ spec next to the code for the concurrent, stateful parts. That way, the gap between spec and code is written down where reviewers can see it.
 
-- **Lean 4 compiles to C, then to native code.** So a function proved in Lean and compiled is the same function that ships — no extraction gap, no "the model was correct but the code wasn't." This is the default Lean workflow and is the closest thing to a real solution to the "code matches proof" problem: you eliminate the second program.
-- From the TLA+ side the analogous move is **code generation**, and it's weak. Apalache is a symbolic *model checker* translating TLA+ to SMT constraints, not a compiler; Quint transpiles to Apalache IR/TLA+ — all inward, toward checking, not outward toward shipping code. There is no credible TLA+→C or TLA+→Elixir compiler, and you shouldn't expect one, because TLA+ specs are untyped, nondeterministic, and non-executable by design.
+## What to watch for
 
----
-
-## A practical recipe for your case
-
-Given "Elixir or C or anything else," the realistic layering is:
-
-1. **Spec in TLA+**, model-check with TLC. Cheap, finds design bugs.
-2. **Instrument the implementation** to emit NDJSON traces; **validate traces** with TLC against a `TraceSpec`. This is your primary, language-agnostic link between code and spec, and it's where you get the best bug-per-hour return.
-3. **Feed TLC/Apalache counterexamples back** as test inputs against the real code (ITF → your test harness) — this converts "the model found a bug" into a regression test.
-4. **For the parts that must be *proved*** — a consensus core, a crypto primitive, a protocol invariant that must hold for all node counts — either:
-   - move that component to **Rust** and use Aeneas/hax → Lean, or
-   - write it directly in **Lean** and compile it, or
-   - for C, use **CN/Frama-C/VST** rather than trying to force Lean.
-5. Keep a **low-level TLA+ spec** next to the code for the concurrent/stateful parts, so the abstraction gap is documented and reviewable rather than implicit.
-
-## What to watch out for
-
-- **Nobody has a mature TLA+↔Lean bridge.** You will hand-translate between them, and that translation is itself unverified. Don't let a Lean proof of `Abs` plus a TLA+ spec of `Abs` create the illusion of a chain — the two `Abs`s are two different objects maintained by hand.
-- **Trace validation's failure mode is silence.** A mapping bug (event X treated as action Y) makes bad traces pass. Validate the validator by deliberately corrupting a trace and confirming rejection.
-- **Constants and configuration drift** are the most common false failures, and the most common cause of people abandoning the setup after week two.
-- **The TLA+ side scales down better; the Lean side scales up better.** For "does my Elixir GenServer do what the design doc says," trace validation is the answer. For "is this algorithm correct for any number of replicas," only the Lean side will get you there.
+- No mature tool connects TLA+ and Lean. You translate between them by hand, and nothing checks that translation. A Lean proof of `Abs` and a TLA+ spec of `Abs` don't form a chain. They are two different objects that you keep in sync by hand.
+- When trace validation fails, it usually fails silently. A mapping bug, such as treating event X as action Y, lets bad traces pass. Test the validator by corrupting a trace on purpose and checking that TLC rejects it.
+- Constants and configuration that drift from the code cause most false failures. They are also the most common reason teams give up on trace validation after a couple of weeks.
+- The TLA+ side works better for small, concrete questions, and the Lean side works better for general ones. To check that an Elixir GenServer does what the design doc says, use trace validation. To show an algorithm is correct for any number of replicas, only Lean will do it.

@@ -58,7 +58,7 @@ end
 
 StreamData tries 100 random sequences of borrows and returns by 10 patrons, for 1 to 5 copies. On the buggy code it passes, because it runs one step at a time and never puts two borrows side by side. The property is right, but the test can't reach the bad timing.
 
-The 2-patron test runs the buggy borrow for Socrates and Beelzebub at the same time, with 1 copy. That's exactly the size TLC checks. Show two runs of `BUGGY=1 mix test`, with the same code and the same command. One passes and one fails. On the presenter's machine, 5 of 8 runs failed and 3 passed. Whether the bug ships depends on how the scheduler happened to order two processes during that CI run.
+The 2-patron test runs the buggy borrow for Socrates and Beelzebub at the same time, with 1 copy. That's the size TLC checks. Show two runs of `BUGGY=1 mix test`, with the same code and the same command. One passes and one fails. On the presenter's machine, 5 of 8 runs failed and 3 passed. Whether the bug ships depends on how the scheduler happened to order two processes during that CI run.
 
 Use these two captured runs on the slide, because you can't choose which one you get on stage. Running it live is optional, and either result makes the point.
 
@@ -98,7 +98,7 @@ Failed: 1 test
 
 In both runs the property test passes, so the same output shows both points from this slide.
 
-The sentence "never lends out more copies than it owns" appears again on every slide after this one.
+Slides 4 and 7 reuse this sentence as the TLA+ invariant and the Lean theorem.
 
 ### 4. The property, owned by a human
 
@@ -126,9 +126,9 @@ Read it out loud. It is the same story as slide 1. Paste it into the PR so revie
 
 ### 6. A green check that means nothing
 
-`Conservation` says copies on the shelf plus copies on loan equal copies owned. It sounds like the right property, and an LLM asked for "an invariant for this library" may well write it. TLC passes it on the buggy design, and Lean proves it for the buggy design at every size. In step 5 of the trace, the shelf is at -1 and 2 copies are out, which still adds up to 1.
+`Conservation` says copies on the shelf plus copies on loan equal copies owned. It sounds like the right property, and an LLM asked for "an invariant for this library" may write it. TLC passes it on the buggy design, and Lean proves it for the buggy design at every size. In step 5 of the trace, the shelf is at -1 and 2 copies are out, which still adds up to 1.
 
-A passing check is only as good as its property. Only a human who knows the domain can say whether it is the right one.
+TLC and Lean check only the property you give them. Only a human who knows the domain can say whether it is the right one.
 
 ### 7. Lean
 
@@ -159,16 +159,16 @@ Ways to narrow the gap, from cheapest to most work:
 
 Use this to answer "why both?" during questions.
 
-**TLA+ (with the TLC model checker)**
+#### TLA+, with the TLC model checker
 
 | Can | Can't |
 |---|---|
 | Describe a design as states and steps, especially concurrent ones | Run. A spec isn't code, and nothing generates code from it. |
 | Try every ordering of steps in a small model, with no proof to write | Cover sizes outside the model. Passing at 2 patrons is evidence, not proof. |
-| Print a step-by-step trace when a property fails | Catch type mistakes. TLA+ is untyped, so a misspelled value like `"has_bok"` is just a different value, which can make a property quietly always true. |
+| Print a step-by-step trace when a property fails | Catch type mistakes. TLA+ is untyped, so a misspelled value like `"has_bok"` is just a different value, and a property that tests for it can pass in every state. |
 | Check "eventually" properties, like "everyone on the waitlist gets the book" | Check that the code matches the spec |
 
-**Lean**
+#### Lean
 
 | Can | Can't |
 |---|---|
@@ -177,9 +177,9 @@ Use this to answer "why both?" during questions.
 | Type-check the model as you write it | Always write the proof for you. `grind` did here, but `fixed_inv` still needed a person to supply the stronger invariant. |
 | Build on libraries of existing proofs, like Mathlib and CSLib | Check that Elixir code matches the model, unless the code is in Lean or translated into it, as Lynx does |
 
-**Neither can** tell you whether you wrote the right property. `Conservation` passed TLC and was proved in Lean, and the bug was still there.
+Neither tool can tell you whether you wrote the right property. `Conservation` passed TLC and was proved in Lean, and the bug was still there.
 
-**In one line:** TLA+ finds design bugs quickly at small sizes. Lean proves the design at every size, and you write the proof. Start with TLA+, and reach for Lean once TLC stops finding bugs and you need the guarantee for every size.
+TLA+ finds design bugs at small sizes, with no proof to write. Lean proves the design at every size, and you write the proof. Start with TLA+, and reach for Lean once TLC stops finding bugs and you need the guarantee at every size.
 
 ## Left out on purpose
 

@@ -25,20 +25,20 @@ Each symbol's name, then how to type it with the Lean editor extension.
 
 ## Keywords
 
-- `Nat` whole numbers from 0, `Int` integers, `List Nat` a list of `Nat`s
-- `namespace X` ... `end X` groups names under `X`
-- `structure` a record type with named fields
+- `Nat` whole numbers from 0, `Int` integers, `List Nat` a list of `Nat`s.
+- `namespace X` ... `end X` groups names under `X`.
+- `structure` a record type with named fields.
 - `def` a definition. `: Prop` means it defines a true-or-false statement.
 - `inductive` a type defined by the ways to build it. `Reachable` has two: `init` and `step`.
-- `{ s with f := v }` a copy of `s` with field `f` changed
-- `variable` declares arguments that every theorem below takes automatically
+- `{ s with f := v }` a copy of `s` with field `f` changed.
+- `variable` declares arguments that every theorem below takes automatically.
 - `theorem` a statement plus its proof. Lean rejects it if the proof is wrong.
-- `by` starts a proof written as tactics, which are commands that build it
-- `induction h` prove it for `init`, then for each `step`
+- `by` starts a proof written as tactics, which are commands that build it.
+- `induction h` prove it for `init`, then for each `step`.
 - `grind` Lean's built-in automation. The names in `[...]` are definitions it may unfold.
 - `have x : T := ...` proves a step `T` and names it `x`
-- `exact` finishes the proof with the given term
-- `/-- ... -/` a doc comment, and `--` a line comment
+- `exact` finishes the proof with the given term.
+- `/-- ... -/` a doc comment, and `--` a line comment.
 -/
 
 namespace Library
@@ -98,7 +98,7 @@ theorem buggy_conservation (h : Reachable copies BuggyNext s) :
     Conservation copies s := by
   induction h <;> grind [Init, Conservation, BuggyNext, Look, Take, Return]
 
-/-- Why this exists: induction on `NeverOverLent` alone fails. Knowing only
+/-- This exists because induction on `NeverOverLent` alone fails. Knowing only
 `loans ≤ copies`, Lean can't rule out a state where every copy is out but the
 shelf still shows one, and a `Borrow` from there over-lends. These two facts
 rule that state out. TLC never needs this, because it only visits real states. -/

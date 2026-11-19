@@ -62,7 +62,7 @@ BUGGY=1 mix test
   - https://github.com/whatyouhide/stream_data
   - https://stream-data.hexdocs.pm/ExUnitProperties.html
 
-## Future Work
+## Future work
 
 Deterministic simulation testing:
 - https://antithesis.com/docs/resources/deterministic_simulation_testing/
