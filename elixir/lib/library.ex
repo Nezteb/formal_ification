@@ -1,22 +1,24 @@
 defmodule Library do
   @moduledoc """
   The code for `tla/Library.tla`. The Agent holds the spec's `shelf` and
-  `loans`, and each spec step is a function with the same name.
+  `loans`, and each spec action is a function with the same name.
   """
+
+  use Agent
 
   def start_link(copies), do: Agent.start_link(fn -> %{shelf: copies, loans: MapSet.new()} end)
 
   def loans(library), do: Agent.get(library, & &1.loans)
 
   @doc """
-  The buggy borrow. It calls `look/2`, then `take/2` in a second message.
+  The buggy borrow. It calls `look?/2`, then `take/2` in a second message.
   Another patron can take the last copy in between.
   """
   def borrow_buggy(library, patron) do
-    if look(library, patron), do: take(library, patron), else: {:error, :unavailable}
+    if look?(library, patron), do: take(library, patron), else: {:error, :unavailable}
   end
 
-  defp look(library, patron) do
+  defp look?(library, patron) do
     Agent.get(library, fn s -> s.shelf > 0 and patron not in s.loans end)
   end
 

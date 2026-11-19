@@ -12,7 +12,7 @@ The spec, the proof, and the code match step for step:
 |---|---|---|
 | `shelf`, `loans` | `shelf`, `loans` | The Agent's `%{shelf:, loans:}` |
 | `looked` | `looked` | A process between its `Agent.get` and its `Agent.update` |
-| `Look(p)` | `Look p` | `look/2`, an `Agent.get` |
+| `Look(p)` | `Look p` | `look?/2`, an `Agent.get` |
 | `Take(p)` | `Take p` | `take/2`, an `Agent.update` |
 | `Borrow(p)` | `Borrow p` | `borrow/2`, one `Agent.get_and_update` |
 | `Return(p)` | `Return p` | `return/2` |
@@ -28,7 +28,7 @@ Slide 6 is the easiest to cut.
 | 2 | The Elixir code | `borrow_buggy/2` next to `borrow/2` |
 | 3 | The tests | The property test, then a green and a red run of the 2-patron test |
 | 4 | The property, owned by a human | `NeverOverLent`, with the English sentence above it |
-| 5 | The trace | TLC's 5-step trace |
+| 5 | The trace | TLC's 5-state trace |
 | 6 | A green check that means nothing | `Conservation` passing on the buggy design, in TLC and Lean |
 | 7 | Lean | Theorem statements, then `#print axioms` catching a fake proof |
 | 8 | Does the spec match the code? | The mapping table above, then TLA+ `Take` next to Elixir `take/2` |
@@ -46,14 +46,14 @@ Ask the room whether their code has a `get` followed by an `update`.
 
 ### 2. The Elixir code
 
-Show `borrow_buggy/2` next to `borrow/2`. The buggy one calls `look/2`, an `Agent.get`, then `take/2`, an `Agent.update`. The fixed one does both in one `Agent.get_and_update`. Both pass code review.
+Show `borrow_buggy/2` next to `borrow/2`. The buggy one calls `look?/2`, an `Agent.get`, then `take/2`, an `Agent.update`. The fixed one does both in one `Agent.get_and_update`. Both pass code review.
 
 ### 3. The tests
 
 ```elixir
-property "never lends out more copies than it owns" do
+property "never lends out more copies than it owns", %{borrow: borrow} do
   check all copies <- integer(1..5),
-            steps <- list_of(tuple({member_of([@borrow, :return]), integer(1..10)})) do
+            steps <- list_of(tuple({member_of([borrow, :return]), integer(1..10)})) do
     ...
   end
 end
@@ -84,13 +84,13 @@ Red on the next:
 Running ExUnit with seed: 845148, max_cases: 28
 
   1) test 2 patrons at once never get more than 1 copy (LibraryTest)
-     test/library_test.exs:23
+     test/library_test.exs:25
      Assertion with <= failed
      code:  assert MapSet.size(Library.loans(library)) <= 1
      left:  2
      right: 1
      stacktrace:
-       test/library_test.exs:30: (test)
+       test/library_test.exs:32: (test)
 
 .
 Finished in 0.05 seconds (0.05s async, 0.00s sync)
@@ -111,11 +111,11 @@ The property test's name, "never lends out more copies than it owns", comes back
 NeverOverLent == Cardinality(loans) <= Copies
 ```
 
-An LLM can draft the `Look` and `Take` steps. A person who knows the domain has to write or approve this line, because every check after it tests against it.
+An LLM can draft the `Look` and `Take` actions. A person who knows the domain has to write or approve this line, because every check after it tests against it.
 
 ### 5. The trace
 
-TLC tries every ordering of the steps for the same 1 copy and 2 patrons. It fails every time, in 5 steps:
+TLC tries every ordering of the steps for the same 1 copy and 2 patrons. It fails every time, after 4 steps:
 
 ```text
 1. shelf = 1   loans = {}                     looked = {}
@@ -129,7 +129,7 @@ Read it out loud. It is the same story as slide 1. Paste it into the PR so revie
 
 ### 6. A green check that means nothing
 
-`Conservation` says copies on the shelf plus copies on loan equal copies owned. It sounds like the right property, and an LLM asked for "an invariant for this library" may write it. TLC passes it on the buggy design, and Lean proves it for the buggy design at every size. In step 5 of the trace, the shelf is at -1 and 2 copies are out, which still adds up to 1.
+`Conservation` says copies on the shelf plus copies on loan equal copies owned. It sounds like the right property, and an LLM asked for "an invariant for this library" may write it. TLC passes it on the buggy design, and Lean proves it for the buggy design at every size. In state 5 of the trace, the shelf is at -1 and 2 copies are out, which still adds up to 1.
 
 TLC and Lean check only the property you give them. Only a human who knows the domain can say whether it is the right one.
 
@@ -150,7 +150,7 @@ The first is the guarantee we want. The second is slide 6's trap, proved at ever
 Check one more thing before trusting a Lean file an LLM wrote. A proof can end in `sorry`, which tells Lean "trust me." The file still builds, with only a warning. Write `#print axioms` and a theorem's name on its own line in the `.lean` file, and `lake build` lists what that theorem depends on. The end of `lean/Library.lean` has one for each theorem, so every build prints this:
 
 ```text
-info: Library.lean:136:0: 'Library.never_over_lent' depends on axioms: [propext, Classical.choice, Quot.sound]
+info: Library.lean:140:0: 'Library.never_over_lent' depends on axioms: [propext, Classical.choice, Quot.sound]
 ```
 
 For comparison, here is a fake proof that isn't in the repo:
@@ -161,11 +161,17 @@ theorem buggy_never_over_lent ... := by sorry
 'buggy_never_over_lent' depends on axioms: [sorryAx]
 ```
 
-The first list is Lean's three standard axioms. `sorryAx` means a step was never proved.
+The first list is Lean's three standard axioms, which most proofs depend on:
+
+- `propext`: two statements that imply each other are equal.
+- `Classical.choice`: if something exists, you can pick one. It also makes every statement either true or false.
+- `Quot.sound`: two values that a type treats as the same are equal. Lean also uses it to show two functions are equal when they give the same output for every input.
+
+`sorryAx` means part of the proof was skipped with `sorry`.
 
 ### 8. Does the spec match the code?
 
-Show the mapping table, then one step from each file:
+Show the mapping table, then one action next to its Elixir function:
 
 ```tla
 Take(p) ==
@@ -187,7 +193,7 @@ Both are short, and anyone who reads Elixir can check them line by line. The `sh
 
 ### 9. Nothing checks the match
 
-Every spec step has a function with the same name, and a reviewer can check the mapping by reading both files. Nothing checks it automatically. If someone later changes `borrow/2` back into two Agent calls, TLC and Lean keep passing, because they check the spec, not the code.
+Every spec action has a function with the same name, and a reviewer can check the mapping by reading both files. Nothing checks it automatically. If someone later changes `borrow/2` back into two Agent calls, TLC and Lean keep passing, because they check the spec, not the code.
 
 Ways to narrow the gap, from cheapest to most work:
 
@@ -208,7 +214,7 @@ Use this to answer "why both?" during questions.
 | Try every ordering of steps in a small model, with no proof to write | Cover sizes outside the model with TLC alone. Passing at 2 patrons is evidence, not proof. |
 | Print a step-by-step trace when a property fails | Catch type mistakes. TLA+ is untyped, so a misspelled value like `"has_bok"` is just a different value, and a property that tests for it can pass in every state. |
 | Check "eventually" properties, like "everyone on the waitlist gets the book" | Check that the code matches the spec |
-| Prove a property at every size with TLAPS, a separate proof checker that reads proofs written in TLA+. This demo doesn't use it. | Make proofs as easy as model checking. A TLAPS proof needs a type invariant, since TLA+ has no types, plus the same helper facts Lean needed. `PROOF OMITTED` skips a step, like Lean's `sorry`. |
+| Prove a property at every size with TLAPS, a separate proof checker that reads proofs written in TLA+. This demo doesn't use it. | Make proofs as easy as model checking. A TLAPS proof needs a type invariant, since TLA+ has no types, plus the same helper facts Lean needed. `PROOF OMITTED` skips a proof step, like Lean's `sorry`, and tlapm only reports it as a failure with `--strict`. |
 
 #### Lean
 
@@ -267,7 +273,7 @@ These tables cover what the two files use, plus the TLAPS keywords that match Le
 | the property to check | `INVARIANT` in the `.cfg` file | the statement of a `theorem` |
 | prove it | `THEOREM` and `PROOF`, with TLAPS. Not used here. | `by`, `induction`, `grind`, `have`, `exact` |
 | skip a proof step | `PROOF OMITTED`, with TLAPS. Not used here. | `sorry` |
-| find skipped steps | | `#print axioms` |
+| find skipped steps | `tlapm --strict` or `tlapm --summary`, with TLAPS. Not used here. | `#print axioms` |
 
 ### Backup slide: time and clocks
 
@@ -277,11 +283,48 @@ The demo has no clock, but real application logic often does. Examples are a hol
 |---|---|---|
 | What "time" means by default | A behavior is a sequence of states, and each step moves it forward. `[][Next]_vars` in our spec already says "always". | Nothing built in. You define steps yourself, like `Reachable`, or a trace as a function from step number to state. |
 | "Always" and "eventually" | Built-in operators. `[]` always, `<>` eventually, `~>` leads to. | You write them out. "Always" is "for every step `n`", and "eventually" is "for some step `n`". |
-| Making progress | Fairness conditions, `WF` and `SF`, rule out runs where a step stays possible forever but never happens. TLC can check "eventually" properties with them. | No fairness library. You state the progress assumption yourself and use it in the proof. |
-| Clock time, like "expires after 3 days" | Add a `now` variable and a `Tick` step that increases it. TLC needs a bound, like "`now` stays under 10", so the model stays finite. | Add a `now` field and a step that increases it. A proof can cover any amount of time, with no bound. |
+| Making progress | Fairness conditions, `WF` and `SF`, rule out behaviors where an action stays possible forever but never happens. TLC can check "eventually" properties with them. | No fairness library. You state the progress assumption yourself and use it in the proof. |
+| Clock time, like "expires after 3 days" | Add a `now` variable and a `Tick` action that increases it. TLC needs a bound, like "`now` stays under 10", so the model stays finite. | Add a `now` field and a `Tick` action that increases it. A proof can cover any amount of time, with no bound. |
 | Clocks on different machines | Give each machine its own clock variable, and let them drift apart by any amount up to a bound. TLC tries every ordering of their steps. Logical clocks, like Lamport or vector clocks, are common in specs. | Same model, but the proof covers any number of machines and any amount of drift within the bound. |
 
 Both tools share one limit. If the model says "clocks drift by at most 1 second," every result assumes that. If the real servers drift by 5 seconds, the check or proof says nothing about them. A human has to decide that bound and keep it true in production, the same way a human owns `NeverOverLent`.
+
+## Terms
+
+Short definitions of the terms the talk and the files use, with an example from this repo where there is one.
+
+#### Modeling
+
+- **Specification, or spec.** A precise description of what a system should do. `tla/Library.tla` is ours.
+- **Model.** A simplified version of the system that keeps only the parts that matter. Ours tracks `shelf`, `loans`, and `looked`, and nothing about book titles or due dates.
+- **State.** A value for every variable, such as `shelf = 1, loans = {}, looked = {}`.
+- **Step.** A pair of states, one before and one after. Slide 5's trace has 5 states, so it has 4 steps.
+- **Action.** A rule that says which steps are allowed. It relates the old state to the new one, written `shelf` and `shelf'` in TLA+, and `s` and `s'` in Lean. `Look`, `Take`, `Borrow`, and `Return` are actions.
+- **Behavior.** An infinite sequence of states. A system that stops is a behavior that repeats its last state forever. These repeats are called stuttering steps, and `[][Next]_vars` allows them.
+- **Trace.** A finite run of states, such as the start of a behavior. TLC prints a trace when an invariant fails.
+- **Reachable state.** A state that some behavior arrives at, starting from `Init`. TLC visits every one, and Lean's `Reachable` defines them.
+
+#### Properties
+
+- **Property.** A statement about behaviors. A spec has a property if every behavior the spec allows has it.
+- **Invariant.** A statement about a single state that is true in every reachable state. `NeverOverLent` and `Conservation` are invariants.
+- **Safety property.** "Something bad never happens." If a behavior breaks one, a finite trace shows it. Every invariant is a safety property.
+- **Liveness property.** "Something good eventually happens", such as "everyone on the waitlist gets the book". No finite trace can break one, because the good thing could still happen later. The demo has none.
+- **Weak fairness.** An assumption that if an action stays possible from some point on, it eventually happens. TLA+ writes it `WF_vars(A)`.
+- **Strong fairness.** An assumption that if an action keeps becoming possible, even with gaps, it eventually happens. TLA+ writes it `SF_vars(A)`. Liveness properties usually need weak or strong fairness, because without it a behavior can stutter forever.
+
+#### Checking and proving
+
+- **Model checking.** Trying every reachable state of a small model. TLC is a model checker.
+- **Counterexample.** A trace that breaks a property. It is a real bug in the model. Whether the code has the same bug depends on how well the model matches the code.
+- **Proof.** An argument that a statement holds in every case, written in steps a tool can check. Lean and TLAPS check proofs.
+- **Theorem.** A statement that has been proved. `never_over_lent` is a theorem.
+- **Lemma.** A theorem proved mainly to help prove another one. The difference is only in why you wrote it. `fixed_inv` is a lemma for `never_over_lent`. Core Lean has no `lemma` keyword, so this repo writes `theorem` for both. Mathlib, a Lean library, adds `lemma` as another name for `theorem`. TLA+ accepts `LEMMA` and `COROLLARY` as other names for `THEOREM`.
+- **Axiom.** A statement accepted without proof. `propext` is one of Lean's standard axioms, and `sorryAx` is the axiom behind every `sorry`. TLA+ writes axioms with `AXIOM` or `ASSUME`.
+- **Induction.** A way to prove something holds in every reachable state. Prove it for `Init`, then prove that every step keeps it true.
+- **Inductive invariant.** An invariant strong enough that "true before a step" proves "true after the step". `NeverOverLent` alone isn't one. `fixed_inv`'s two facts together are.
+- **Tactic.** An instruction inside a Lean proof that tells Lean how to build the proof, such as `induction` or `grind`.
+- **Proof obligation.** One small statement a proof tool has to prove. tlapm splits a proof into obligations and reports how many it proved.
 
 ## Left out on purpose
 

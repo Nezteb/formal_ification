@@ -33,19 +33,18 @@ Each symbol's name, then how to type it with the Lean editor extension.
 - `inductive` a type defined by the ways to build it. `Reachable` has two: `init` and `step`.
 - `{ s with f := v }` a copy of `s` with field `f` changed.
 - `variable` declares arguments that every theorem below takes automatically.
-- `theorem` a statement plus its proof. Lean rejects it if the proof is wrong.
-- `by` starts a proof written as tactics, which are commands that build it.
+- `theorem` declares a statement and its proof. Lean rejects it if the proof is wrong.
+- `by` starts a proof written as tactics, instructions that tell Lean how to build it.
 - `induction h` prove it for `init`, then for each `step`.
 - `grind` Lean's built-in automation. The names in `[...]` are definitions it may unfold.
-- `have x : T := ...` proves a step `T` and names it `x`.
+- `have x : T := ...` proves a smaller fact `T` and names it `x`.
 - `exact` finishes the proof with the given term.
-- `sorry` skips a proof and tells Lean "trust me". TLAPS, the TLA+ proof checker, has the
-  same thing, `PROOF OMITTED`. This file doesn't use it. Lean accepts
+- `sorry` skips a proof and tells Lean "trust me". This file doesn't use `sorry`. Lean accepts
   `theorem trust_me : 1 = 2 := by sorry`, with only a warning, so a file can build and still
-  prove nothing.
-- `#print axioms t` lists what theorem `t` depends on. `sorryAx` in the list means a `sorry`
-  is hiding somewhere in `t`'s proof. The end of this file has one for each theorem, and
-  `lake build` prints the results.
+  prove nothing. TLAPS, the TLA+ proof checker, has the same thing, `PROOF OMITTED`.
+- `#print axioms t` lists what theorem `t` depends on. `sorryAx` in the list means `t`'s proof
+  uses `sorry` somewhere. The end of this file has one for each theorem, and `lake build`
+  prints the results.
 - `/-- ... -/` a doc comment, and `--` a line comment.
 -/
 
@@ -100,6 +99,11 @@ def Conservation (copies : Nat) (s : State) : Prop := s.shelf + s.loans.length =
 
 variable {copies : Nat} {s : State}
 
+-- `grind` replaces `simp` and `omega` here. Like `simp`, it unfolds the
+-- definitions in `[...]` and rewrites the goal. Like `omega`, it solves the
+-- linear arithmetic left over, such as `shelf + loans.length = copies`. It
+-- also splits cases on its own, like `Borrow` versus `Return`.
+
 /-- The buggy design keeps `Conservation`, for any number of copies and
 patrons, because the shelf goes negative while it over-lends. -/
 theorem buggy_conservation (h : Reachable copies BuggyNext s) :
@@ -109,7 +113,7 @@ theorem buggy_conservation (h : Reachable copies BuggyNext s) :
 /-- This exists because induction on `NeverOverLent` alone fails. Knowing only
 `loans ≤ copies`, Lean can't rule out a state where every copy is out but the
 shelf still shows one, and a `Borrow` from there over-lends. These two facts
-rule that state out. TLC never needs this, because it only visits real states. -/
+rule that state out. TLC never needs this, because it only visits reachable states. -/
 theorem fixed_inv (h : Reachable copies FixedNext s) :
     Conservation copies s ∧ 0 ≤ s.shelf := by
   induction h <;> grind [Init, Conservation, FixedNext, Borrow, Return]
@@ -120,7 +124,7 @@ theorem never_over_lent (h : Reachable copies FixedNext s) :
   grind [fixed_inv h, NeverOverLent, Conservation]
 
 /-- The buggy design does over-lend. Lean can't search for this the way TLC
-does, so we write out TLC's 5-step trace, naming who acts at each step, and
+does, so we write out TLC's 5-state trace, naming who acts at each step, and
 Lean checks each step. -/
 theorem buggy_over_lends : ∃ s, Reachable 1 BuggyNext s ∧ ¬ NeverOverLent 1 s := by
   have s1 : Reachable 1 BuggyNext ⟨1, [], []⟩ := .init
@@ -135,5 +139,10 @@ theorem buggy_over_lends : ∃ s, Reachable 1 BuggyNext s ∧ ¬ NeverOverLent 1
 #print axioms buggy_conservation
 #print axioms never_over_lent
 #print axioms buggy_over_lends
+-- Each list should be Lean's three standard axioms, which most proofs depend on:
+--   `propext`           two statements that imply each other are equal.
+--   `Classical.choice`  if something exists, you can pick one. It also makes every statement either true or false.
+--   `Quot.sound`        two values that a type treats as the same are equal. Lean also uses it to show two functions are equal when
+--                       they give the same output for every input.
 
 end Library
