@@ -1,0 +1,36 @@
+# Library hold queue
+
+```elixir
+Mix.install([
+  {:library, path: Path.join(__DIR__, "..")},
+  {:kino, "~> 0.14"}
+])
+```
+
+## One run, step by step
+
+Edit the commands, flip `buggy`, re-evaluate. With `buggy: true`, watch `shelf` go above 0 while `holds` is not empty.
+
+```elixir
+buggy = false
+
+commands = [borrow: :ana, borrow: :ben, hold: :cy, return: :ana, return: :ben]
+
+commands
+|> Enum.scan({:start, Library.new(2, buggy: buggy)}, fn {op, patron}, {_, lib} ->
+  case apply(Library, op, [lib, patron]) do
+    {:ok, lib} -> {"#{op} #{patron}", lib}
+    {:error, reason} -> {"#{op} #{patron} (#{reason})", lib}
+  end
+end)
+|> Enum.map(fn {step, lib} ->
+  %{
+    step: step,
+    shelf: lib.shelf,
+    loans: lib.loans |> Enum.sort() |> Enum.join(", "),
+    holds: lib.holds |> :queue.to_list() |> Enum.join(", "),
+    ok: lib.shelf == 0 or :queue.is_empty(lib.holds)
+  }
+end)
+|> Kino.DataTable.new(keys: [:step, :shelf, :loans, :holds, :ok])
+```
