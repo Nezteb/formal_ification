@@ -39,6 +39,13 @@ Each symbol's name, then how to type it with the Lean editor extension.
 - `grind` Lean's built-in automation. The names in `[...]` are definitions it may unfold.
 - `have x : T := ...` proves a step `T` and names it `x`.
 - `exact` finishes the proof with the given term.
+- `sorry` skips a proof and tells Lean "trust me". TLAPS, the TLA+ proof checker, has the
+  same thing, `PROOF OMITTED`. This file doesn't use it. Lean accepts
+  `theorem trust_me : 1 = 2 := by sorry`, with only a warning, so a file can build and still
+  prove nothing.
+- `#print axioms t` lists what theorem `t` depends on. `sorryAx` in the list means a `sorry`
+  is hiding somewhere in `t`'s proof. The end of this file has one for each theorem, and
+  `lake build` prints the results.
 - `/-- ... -/` a doc comment, and `--` a line comment.
 -/
 
@@ -122,5 +129,11 @@ theorem buggy_over_lends : ∃ s, Reachable 1 BuggyNext s ∧ ¬ NeverOverLent 1
   have s4 : Reachable 1 BuggyNext ⟨0, [0], [1]⟩ := .step s3 ⟨0, by grind [Take]⟩
   have s5 : Reachable 1 BuggyNext ⟨-1, [1, 0], []⟩ := .step s4 ⟨1, by grind [Take]⟩
   exact ⟨_, s5, by grind [NeverOverLent]⟩
+
+-- Lists the axioms each theorem depends on. `lake build` prints the results.
+-- `sorryAx` in any list means that theorem has a `sorry` somewhere.
+#print axioms buggy_conservation
+#print axioms never_over_lent
+#print axioms buggy_over_lends
 
 end Library

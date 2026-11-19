@@ -31,6 +31,8 @@ cd lean
 lake build
 ```
 
+`lake build` also prints the axioms each theorem depends on. A `sorryAx` in that output means a proof was skipped with `sorry`.
+
 ```sh
 cd elixir
 mix deps.get
@@ -51,6 +53,8 @@ BUGGY=1 mix test
   - https://lamport.azurewebsites.net/tla/tools.html
   - https://lamport.azurewebsites.net/tla/standalone-tools.html?back-link=tools.html
   - https://github.com/QuinnWilton/accord#accord
+  - https://github.com/tlaplus/tlapm
+    - TLAPS, the TLA+ proof system. Not used in the demo.
 - Formal verification (Lean)
   - https://en.wikipedia.org/wiki/Formal_verification
   - https://en.wikipedia.org/wiki/Lean_(proof_assistant)

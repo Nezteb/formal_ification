@@ -34,6 +34,10 @@ Keywords.
 
 The `.cfg` files set `CONSTANTS`, pick the `SPECIFICATION` to run, and list
 each `INVARIANT`, a property TLC checks in every state it reaches.
+
+This file has no proofs. TLC checks it by trying every state. TLAPS, a
+separate tool, can check proofs written in TLA+ with `THEOREM` and `PROOF`,
+the way Lean does. `PROOF OMITTED` skips a step, like Lean's `sorry`.
 ***************************************************************************)
 
 EXTENDS Naturals, FiniteSets
