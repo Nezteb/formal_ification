@@ -1,92 +1,38 @@
 /-!
-# Library hold queue
+# Library
 
-This is the same model as `tla/Library.tla`. It has one book, a fixed number
-of copies, and a first-come-first-served hold queue. TLC checked 3 patrons and
-2 copies. This file proves the invariant for any number of patrons and copies.
+This is the fixed design from `tla/Library.tla`. TLC checked 1 copy and 2
+patrons. This file proves the fixed design never over-lends for any number of
+copies and any sequence of borrows and returns.
 -/
 
 namespace Library
 
-abbrev Patron := Nat
-
-structure Lib where
-  shelf : Nat
-  loans : List Patron
-  holds : List Patron
-
 inductive Op where
-  | borrow (p : Patron)
-  | hold (p : Patron)
-  | ret (p : Patron)
+  | borrow
+  | giveBack
 
-/-- Apply one operation. An operation the rules forbid leaves the state unchanged. -/
-def step (s : Lib) : Op → Lib
-  | .borrow p =>
-    if s.shelf > 0 ∧ s.holds = [] ∧ p ∉ s.loans
-    then { s with shelf := s.shelf - 1, loans := p :: s.loans }
-    else s
-  | .hold p =>
-    if s.shelf = 0 ∧ p ∉ s.loans ∧ p ∉ s.holds
-    then { s with holds := s.holds ++ [p] }
-    else s
-  | .ret p =>
-    if p ∈ s.loans then
-      match s.holds with
-      | [] => { s with shelf := s.shelf + 1, loans := s.loans.erase p }
-      | h :: rest => { s with loans := h :: s.loans.erase p, holds := rest }
-    else s
+/-- `onLoan` is how many copies are out. A borrow checks and takes in one step.
+Returning with nothing out stays at 0, because `Nat` subtraction stops at 0. -/
+def step (copies onLoan : Nat) : Op → Nat
+  | .borrow => if onLoan < copies then onLoan + 1 else onLoan
+  | .giveBack => onLoan - 1
 
-/-- `Conservation` and `NoShelfAndQueue` from the TLA+ spec. -/
-def Inv (copies : Nat) (s : Lib) : Prop :=
-  s.shelf + s.loans.length = copies ∧ (s.shelf > 0 → s.holds = [])
-
-theorem init_inv (copies : Nat) : Inv copies ⟨copies, [], []⟩ := by
-  simp [Inv]
-
-theorem step_preserves (copies : Nat) (s : Lib) (op : Op) :
-    Inv copies s → Inv copies (step s op) := by
-  intro ⟨hcons, hqueue⟩
-  cases op with
-  | borrow p =>
-    simp only [step]
-    split
-    · next h =>
-      refine ⟨?_, fun _ => h.2.1⟩
-      simp only [List.length_cons]; omega
-    · exact ⟨hcons, hqueue⟩
-  | hold p =>
-    simp only [step]
-    split
-    · next h => exact ⟨hcons, fun hpos => absurd h.1 (Nat.pos_iff_ne_zero.mp hpos)⟩
-    · exact ⟨hcons, hqueue⟩
-  | ret p =>
-    simp only [step]
-    split
-    · next hmem =>
-      have hlen := List.length_erase_of_mem hmem
-      have hpos := List.length_pos_of_mem hmem
-      split
-      · next hholds =>
-        refine ⟨?_, fun _ => hholds⟩
-        simp only; omega
-      · next h rest hholds =>
-        -- Someone is waiting, so the shelf must be empty.
-        have hshelf : s.shelf = 0 := by
-          cases Nat.eq_zero_or_pos s.shelf with
-          | inl h0 => exact h0
-          | inr hp => simp [hqueue hp] at hholds
-        refine ⟨?_, fun hp => absurd hshelf (Nat.pos_iff_ne_zero.mp hp)⟩
-        simp only [List.length_cons]; omega
-    · exact ⟨hcons, hqueue⟩
-
-/-- The invariant holds after any sequence of operations from the starting state. -/
-theorem reachable_inv (copies : Nat) (ops : List Op) :
-    Inv copies (ops.foldl step ⟨copies, [], []⟩) := by
-  suffices ∀ s, Inv copies s → Inv copies (ops.foldl step s) from
-    this _ (init_inv copies)
+theorem never_over_lent (copies : Nat) (ops : List Op) :
+    ops.foldl (step copies) 0 ≤ copies := by
+  suffices ∀ n, n ≤ copies → ops.foldl (step copies) n ≤ copies from
+    this 0 (Nat.zero_le copies)
   induction ops with
-  | nil => intro s h; exact h
-  | cons op ops ih => intro s h; exact ih _ (step_preserves copies s op h)
+  | nil => intro n h; exact h
+  | cons op ops ih =>
+    intro n h
+    apply ih
+    cases op <;> simp only [step] <;> (try split) <;> omega
+
+/-- Lean accepts this too. Its name says the library always over-lends, but its
+assumption `copies < 0` can never be true, so it proves nothing. -/
+theorem always_over_lends (copies : Nat) (ops : List Op) (h : copies < 0) :
+    ops.foldl (step copies) 0 > copies := by
+  omega
 
 end Library

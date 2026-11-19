@@ -1,48 +1,31 @@
 defmodule Library do
   @moduledoc """
-  One book with a fixed number of copies and a first-come-first-served hold queue.
-
-  The rules match `tla/Library.tla` and `lean/Library.lean`. Pass `buggy: true`
-  to plant the bug. Every return then puts the copy back on the shelf, even
-  when someone is waiting.
+  One book with a fixed number of copies, the same model as `tla/Library.tla`.
+  The state is the number of copies on the shelf.
   """
 
-  defstruct shelf: 0, loans: MapSet.new(), holds: :queue.new(), buggy: false
+  def start_link(copies), do: Agent.start_link(fn -> copies end)
 
-  def new(copies, opts \\ []),
-    do: %Library{shelf: copies, buggy: Keyword.get(opts, :buggy, false)}
-
-  def borrow(lib, patron) do
-    cond do
-      lib.shelf == 0 -> {:error, :none_available}
-      not :queue.is_empty(lib.holds) -> {:error, :holds_waiting}
-      patron in lib.loans -> {:error, :already_borrowed}
-      true -> {:ok, %{lib | shelf: lib.shelf - 1, loans: MapSet.put(lib.loans, patron)}}
-    end
-  end
-
-  def hold(lib, patron) do
-    cond do
-      lib.shelf > 0 -> {:error, :copy_available}
-      patron in lib.loans -> {:error, :already_borrowed}
-      :queue.member(patron, lib.holds) -> {:error, :already_holding}
-      true -> {:ok, %{lib | holds: :queue.in(patron, lib.holds)}}
-    end
-  end
-
-  def return(lib, patron) do
-    if patron in lib.loans do
-      loans = MapSet.delete(lib.loans, patron)
-
-      case :queue.out(lib.holds) do
-        {{:value, next}, rest} when not lib.buggy ->
-          {:ok, %{lib | loans: MapSet.put(loans, next), holds: rest}}
-
-        _ ->
-          {:ok, %{lib | shelf: lib.shelf + 1, loans: loans}}
-      end
+  @doc """
+  The buggy borrow. It looks at the shelf, then takes a copy in a second
+  message. Another patron can take the last copy in between.
+  """
+  def borrow_buggy(library) do
+    if Agent.get(library, & &1) > 0 do
+      Agent.update(library, &(&1 - 1))
+      :ok
     else
-      {:error, :not_borrowed}
+      {:error, :none_left}
     end
   end
+
+  @doc "The fixed borrow. It checks the shelf and takes a copy in one message."
+  def borrow(library) do
+    Agent.get_and_update(library, fn
+      0 -> {{:error, :none_left}, 0}
+      shelf -> {:ok, shelf - 1}
+    end)
+  end
+
+  def give_back(library), do: Agent.update(library, &(&1 + 1))
 end

@@ -1,69 +1,53 @@
 ---------------------------- MODULE Library ----------------------------
-\* One book with `Copies` copies and a first-come-first-served hold queue.
-\* Set `Buggy` to TRUE to plant the bug. Every return then puts the copy back
-\* on the shelf, even when someone is waiting.
+\* One book with `Copies` copies. Patrons borrow it and return it.
 
-EXTENDS Naturals, Sequences, FiniteSets
+EXTENDS Naturals, FiniteSets
 
-CONSTANTS Patrons, Copies, Buggy
+CONSTANTS Patrons, Copies
 
-VARIABLES shelf, loans, holds
-vars == <<shelf, loans, holds>>
-
-Waiting == {holds[i] : i \in DOMAIN holds}
+\* `shelf` is how many copies are on the shelf.
+\* `state[p]` is "idle", "saw_copy", or "has_book".
+VARIABLES shelf, state
 
 Init ==
   /\ shelf = Copies
-  /\ loans = {}
-  /\ holds = <<>>
+  /\ state = [p \in Patrons |-> "idle"]
 
-\* You can only borrow from the shelf when nobody is waiting.
-Borrow(p) ==
+\* The buggy borrow takes two steps. First the patron sees a copy on the shelf.
+Look(p) ==
+  /\ state[p] = "idle"
   /\ shelf > 0
-  /\ holds = <<>>
-  /\ p \notin loans
+  /\ state' = [state EXCEPT ![p] = "saw_copy"]
+  /\ UNCHANGED shelf
+
+\* Later the patron takes it, without checking the shelf again.
+Take(p) ==
+  /\ state[p] = "saw_copy"
   /\ shelf' = shelf - 1
-  /\ loans' = loans \union {p}
-  /\ UNCHANGED holds
+  /\ state' = [state EXCEPT ![p] = "has_book"]
 
-\* You can only place a hold when no copy is on the shelf.
-Hold(p) ==
-  /\ shelf = 0
-  /\ p \notin loans
-  /\ p \notin Waiting
-  /\ holds' = Append(holds, p)
-  /\ UNCHANGED <<shelf, loans>>
+\* The fixed borrow checks the shelf and takes the copy in one step.
+Borrow(p) ==
+  /\ state[p] = "idle"
+  /\ shelf > 0
+  /\ shelf' = shelf - 1
+  /\ state' = [state EXCEPT ![p] = "has_book"]
 
-\* If anyone is waiting, a returned copy goes straight to the head of the queue.
 Return(p) ==
-  /\ p \in loans
-  /\ IF holds = <<>> \/ Buggy
-       THEN /\ shelf' = shelf + 1
-            /\ loans' = loans \ {p}
-            /\ UNCHANGED holds
-       ELSE /\ loans' = (loans \ {p}) \union {Head(holds)}
-            /\ holds' = Tail(holds)
-            /\ UNCHANGED shelf
+  /\ state[p] = "has_book"
+  /\ shelf' = shelf + 1
+  /\ state' = [state EXCEPT ![p] = "idle"]
 
-Next == \E p \in Patrons : Borrow(p) \/ Hold(p) \/ Return(p)
-
-\* Weak fairness on Return means anyone with a book eventually returns it.
-Spec == Init /\ [][Next]_vars /\ \A p \in Patrons : WF_vars(Return(p))
+BuggyNext == \E p \in Patrons : Look(p) \/ Take(p) \/ Return(p)
+FixedNext == \E p \in Patrons : Borrow(p) \/ Return(p)
 
 -----------------------------------------------------------------------------
 
-TypeOK ==
-  /\ shelf \in 0..Copies
-  /\ loans \subseteq Patrons
-  /\ holds \in Seq(Patrons)
+\* We never lend out more copies than we own.
+NeverOverLent == Cardinality({p \in Patrons : state[p] = "has_book"}) <= Copies
 
-\* Copies on the shelf plus copies on loan equal copies owned.
-Conservation == shelf + Cardinality(loans) = Copies
-
-\* Nobody waits while a copy sits on the shelf.
-NoShelfAndQueue == shelf > 0 => holds = <<>>
-
-\* Everyone who places a hold eventually gets the book.
-HoldsGetServed == \A p \in Patrons : (p \in Waiting) ~> (p \in loans)
+\* The shelf never holds more copies than we own. This sounds right, and TLC
+\* passes it on the buggy design. It isn't the property we care about.
+ShelfNeverOverflows == shelf <= Copies
 
 =============================================================================

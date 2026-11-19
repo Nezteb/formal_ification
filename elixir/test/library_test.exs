@@ -2,36 +2,40 @@ defmodule LibraryTest do
   use ExUnit.Case, async: true
   use ExUnitProperties
 
-  @copies 2
-  @buggy System.get_env("BUGGY") == "1"
+  @borrow if System.get_env("BUGGY") == "1", do: :borrow_buggy, else: :borrow
 
-  defp command do
-    tuple({member_of([:borrow, :hold, :return]), member_of([:ana, :ben, :cy])})
-  end
+  # The same property as `NeverOverLent` in TLA+ and `never_over_lent` in Lean.
+  # StreamData picks the number of copies and a random list of borrows and
+  # returns, then runs them one at a time against the real code.
+  property "never lends out more copies than it owns" do
+    check all copies <- integer(1..5),
+              ops <- list_of(member_of([:borrow, :give_back])) do
+      {:ok, library} = Library.start_link(copies)
 
-  # Applies each command in order. A rejected command leaves the state unchanged.
-  defp run(commands) do
-    Enum.scan(commands, Library.new(@copies, buggy: @buggy), fn {op, patron}, lib ->
-      case apply(Library, op, [lib, patron]) do
-        {:ok, lib} -> lib
-        {:error, _} -> lib
-      end
-    end)
-  end
+      Enum.reduce(ops, 0, fn
+        :borrow, on_loan ->
+          on_loan = if apply(Library, @borrow, [library]) == :ok, do: on_loan + 1, else: on_loan
+          assert on_loan <= copies
+          on_loan
 
-  property "the numbers balance" do
-    check all commands <- list_of(command(), max_length: 30) do
-      for lib <- run(commands) do
-        assert lib.shelf + MapSet.size(lib.loans) == @copies
-      end
+        :give_back, 0 ->
+          0
+
+        :give_back, on_loan ->
+          Library.give_back(library)
+          on_loan - 1
+      end)
     end
   end
 
-  property "nobody waits while a copy is on the shelf" do
-    check all commands <- list_of(command(), max_length: 30) do
-      for lib <- run(commands) do
-        assert lib.shelf == 0 or :queue.is_empty(lib.holds)
-      end
-    end
+  test "50 patrons at once never get more than 1 copy" do
+    {:ok, library} = Library.start_link(1)
+
+    winners =
+      1..50
+      |> Task.async_stream(fn _ -> apply(Library, @borrow, [library]) end)
+      |> Enum.count(&(&1 == {:ok, :ok}))
+
+    assert winners == 1
   end
 end

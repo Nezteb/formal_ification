@@ -1,49 +1,40 @@
 # Formal specification, formal verification, and property-based tests
 
-This repo holds a 5-10 minute lightning talk. It models one small library, plants one bug in it, and shows what TLA+, Lean, and StreamData each say about the bug.
+This repo holds a 5-10 minute lightning talk. An LLM can write and read TLA+ and Lean quickly. A spec only helps if the people who own the code can read it too, so the talk shows what humans have to own when they use these tools.
 
-## The demo: a library hold queue
+`TALK.md` has the slide map.
 
-The library has one book with 2 copies, and 3 patrons named `ana`, `ben`, and `cy`. It follows four rules.
+## The demo: the last copy
 
-1. If a copy is on the shelf and nobody is waiting, you can borrow it.
-2. If no copy is on the shelf, you can place a hold. Holds are first come, first served.
-3. When you return a copy and someone is waiting, the copy goes straight to the head of the queue.
-4. You can't borrow a book you already have, or hold a book you already have or already hold.
+A library has 1 copy of a book and 2 patrons, `ana` and `ben`. The buggy borrow looks at the shelf, then takes the copy in a separate step. If both patrons look before either one takes, both walk out with the book.
 
-Every tool checks two properties. `Conservation` says copies on the shelf plus copies on loan equal copies owned. `NoShelfAndQueue` says nobody waits while a copy sits on the shelf.
-
-The planted bug makes every return put the copy back on the shelf, even when someone is waiting. Turn it on with `Buggy = TRUE` in TLA+, `buggy: true` in Elixir, or `BUGGY=1` for the tests. `Conservation` still holds, and `cy` waits forever.
+The property is one sentence, and a human writes it: we never lend out more copies than we own. In TLA+ that's `NeverOverLent`.
 
 | Tool | Result | Limit |
 |---|---|---|
-| `tla/` TLC | The correct spec passes after checking 10 states. The buggy spec deadlocks after 6 states, and TLC prints the trace. The `HoldsGetServed` liveness property fails too. Nobody had to write `NoShelfAndQueue` to find it. | Checks every state, but only for 2 copies and 3 patrons |
-| `lean/` | `Conservation ∧ NoShelfAndQueue` holds for any number of copies and patrons, after any sequence of operations | Proves it for every size, but can't express "eventually" |
-| `elixir/` StreamData | With the bug, "the numbers balance" passes. "Nobody waits while a copy is on the shelf" fails and shrinks to `[borrow: :cy, borrow: :ana, hold: :ben, return: :ana]` | Runs the real code, but only checks the properties you wrote |
-
-Property tests catch the bug only if someone wrote the right property. TLC finds it without being told what to look for. Its default deadlock check flags the stuck state, and the liveness property flags the patron who never gets the book. Lean proves the fixed version correct for every size. None of the three proves that the Elixir code matches the spec. `references/verifying_implementations.md` covers ways to close that gap.
-
-The demo leaves out per-patron limits, hold expiry, multiple books, concurrency, and trace validation.
+| `tla/` TLC | The buggy design fails `NeverOverLent` in 5 steps and ends with `shelf = -1`. The fixed design passes. The buggy design also passes `ShelfNeverOverflows`, a property that sounds right but isn't the one we care about. | Checks every interleaving, but only for 1 copy and 2 patrons |
+| `lean/` | The fixed borrow never over-lends, for any number of copies and any sequence of borrows and returns. A second theorem that says the opposite also checks, because its assumption can never be true. | Proves every size, but only the question you asked |
+| `elixir/` StreamData | A property test runs random sequences of borrows and returns for 1 to 5 copies. It passes on the buggy code, because it runs one operation at a time. | Runs the real code, but never interleaves two patrons |
+| `elixir/` ExUnit | 50 concurrent borrows of the buggy code. The test passed 86 runs in a row before it failed once. | Runs the real code, but rarely hits the bad timing |
 
 ## Running it
 
-Add `java@21.0.2`, `elixir@1.20.5-otp-27`, and `erlang@27.3.4.19` to `mise.toml`. `elan` installs Lean `v4.36.0` from `lean/lean-toolchain`.
+`mise.toml` pins Java, Elixir, and Erlang. `elan` installs Lean `v4.36.0` from `lean/lean-toolchain`.
 
 ```fish
 # TLA+ (tla2tools.jar v1.7.4, from github.com/tlaplus/tlaplus releases)
 cd tla
-java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -config Library.cfg Library.tla
 java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -config LibraryBuggy.cfg Library.tla
+java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -config LibraryWeak.cfg Library.tla
+java -XX:+UseParallelGC -cp tla2tools.jar tlc2.TLC -config Library.cfg Library.tla
 
 # Lean
 cd lean; lake build
 
 # Elixir
 cd elixir; mix deps.get; mix test
-env BUGGY=1 mix test
+env BUGGY=1 mix test test/library_test.exs:31 --repeat-until-failure 500
 ```
-
-To step through a run in Livebook, open `elixir/notebooks/library.livemd`.
 
 ### TLC flags worth knowing
 
@@ -61,8 +52,8 @@ To step through a run in Livebook, open `elixir/notebooks/library.livemd`.
 ## TODO
 
 - [X] Set up initial TLA+/Lean/Elixir scaffolding
-- [X] Implement the proof of concept , as described in `references/library_hold_queue_plan.md`
-- [X] Add Livebook + Kino for demos/visuals
+- [X] Implement the proof of concept, as described in `TALK.md`
+- [X] Simplify the demo to the last-copy race, with one StreamData property and no Livebook
 - [ ] Come up with high-level `SKILL.md` for formal specification/verification and property-based tests (covering TLA+/Lean specifically, with general references to property-based tests without any focus on a particular language like Elixir/TypeScript/Python)
 
 ## Links
