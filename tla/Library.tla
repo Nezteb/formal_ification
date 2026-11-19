@@ -8,6 +8,7 @@ CONSTANTS Patrons, Copies
 \* `shelf` is how many copies are on the shelf.
 \* `state[p]` is "idle", "saw_copy", or "has_book".
 VARIABLES shelf, state
+vars == <<shelf, state>>
 
 Init ==
   /\ shelf = Copies
@@ -41,13 +42,25 @@ Return(p) ==
 BuggyNext == \E p \in Patrons : Look(p) \/ Take(p) \/ Return(p)
 FixedNext == \E p \in Patrons : Borrow(p) \/ Return(p)
 
+\* A spec is every behavior that starts in Init and takes Next steps.
+\* TLC explores all the states these can reach.
+BuggySpec == Init /\ [][BuggyNext]_vars
+FixedSpec == Init /\ [][FixedNext]_vars
+
 -----------------------------------------------------------------------------
 
+\* The patrons who have the book.
+OnLoan == {p \in Patrons : state[p] = "has_book"}
+
 \* We never lend out more copies than we own.
-NeverOverLent == Cardinality({p \in Patrons : state[p] = "has_book"}) <= Copies
+NeverOverLent == Cardinality(OnLoan) <= Copies
 
 \* The shelf never holds more copies than we own. This sounds right, and TLC
 \* passes it on the buggy design. It isn't the property we care about.
 ShelfNeverOverflows == shelf <= Copies
+
+\* Copies on the shelf plus copies on loan equal copies owned. It holds in both
+\* designs. TLC doesn't need it, but the Lean proof does.
+Conservation == shelf + Cardinality(OnLoan) = Copies
 
 =============================================================================

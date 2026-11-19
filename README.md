@@ -13,7 +13,7 @@ The property is one sentence, and a human writes it: we never lend out more copi
 | Tool | Result | Limit |
 |---|---|---|
 | `tla/` TLC | The buggy design fails `NeverOverLent` in 5 steps and ends with `shelf = -1`. The fixed design passes. The buggy design also passes `ShelfNeverOverflows`, a property that sounds right but isn't the one we care about. | Checks every interleaving, but only for 1 copy and 2 patrons |
-| `lean/` | The fixed borrow never over-lends, for any number of copies and any sequence of borrows and returns. A second theorem that says the opposite also checks, because its assumption can never be true. | Proves every size, but only the question you asked |
+| `lean/` | The same model with the same names. Lean proves the fixed design never over-lends, for any number of copies and patrons. It also proves `ShelfNeverOverflows` for the buggy design, the same trap TLC falls into. To show the bug itself, `buggy_over_lends` writes out TLC's trace and Lean checks it. | Proves every size, but you write the proof, and it only proves the statement you wrote |
 | `elixir/` StreamData | A property test runs random sequences of borrows and returns for 1 to 5 copies. It passes on the buggy code, because it runs one operation at a time. | Runs the real code, but never interleaves two patrons |
 | `elixir/` ExUnit | 50 concurrent borrows of the buggy code. The test passed 86 runs in a row before it failed once. | Runs the real code, but rarely hits the bad timing |
 

@@ -19,7 +19,7 @@ Times add up to about 9 minutes. Slides 7 and 8 are the easiest to cut.
 | 5 | The property, owned by a human | 0:45 | `NeverOverLent`, one line, with the English sentence above it |
 | 6 | The trace | 1:15 | TLC's 5-step trace |
 | 7 | A green check that means nothing | 1:00 | `ShelfNeverOverflows` passing on the buggy design |
-| 8 | Lean, and the same trap | 1:30 | `never_over_lent`, then `always_over_lends` |
+| 8 | Lean, and the same trap | 1:30 | The two files side by side, then `never_over_lent` and `shelf_never_overflows` |
 | 9 | Take-home | 1:00 | Four bullets |
 
 ### 1. The bug in plain words
@@ -56,7 +56,8 @@ The same sentence, "never lends out more copies than it owns", now appears in th
 > We never lend out more copies than we own.
 
 ```tla
-NeverOverLent == Cardinality({p \in Patrons : state[p] = "has_book"}) <= Copies
+OnLoan == {p \in Patrons : state[p] = "has_book"}
+NeverOverLent == Cardinality(OnLoan) <= Copies
 ```
 
 An LLM can draft the `Look` and `Take` steps. A person who knows the domain has to write or approve this line, because it is the contract. It is the same sentence as the property test's name.
@@ -81,14 +82,35 @@ Run the same buggy design against `ShelfNeverOverflows`, which says the shelf ne
 
 ### 8. Lean, and the same trap
 
-TLC checked 1 copy and 2 patrons. Lean proves the fixed borrow never over-lends for any number of copies:
+`lean/Library.lean` is the same model, line for line. `Look`, `Take`, `Borrow`, `Return`, `BuggyNext`, `FixedNext`, `NeverOverLent`, and `ShelfNeverOverflows` all have the same names and the same meaning. Show the two files side by side.
+
+The difference is what each tool does with the model. TLC tries every state for 1 copy and 2 patrons. Lean proves a statement for every number of copies and patrons:
 
 ```lean
-theorem never_over_lent (copies : Nat) (ops : List Op) :
-    ops.foldl (step copies) 0 ≤ copies
+theorem never_over_lent (h : Reachable copies patrons FixedNext w) :
+    NeverOverLent copies w
+
+theorem shelf_never_overflows (h : Reachable copies patrons BuggyNext w) :
+    ShelfNeverOverflows copies w
 ```
 
-Then show `always_over_lends`, which claims the opposite. Lean accepts it too, because it assumes `copies < 0`, which can never be true for a natural number. Lean checks that the proof is valid. It doesn't check that the theorem says what you meant.
+The second theorem is the same trap as slide 7. Lean proves the weak property for the buggy design, for every size, and the bug is still there. A proof is only as good as the statement it proves.
+
+Lean also can't find the bug for you. Nobody can prove `never_over_lent` for `BuggyNext`, because it's false. Lean only tells you the proof didn't go through, not why. To show the bug in Lean, you write out TLC's 5-step trace by hand as `buggy_over_lends`, and Lean checks each step.
+
+### TLA+ and Lean, side by side
+
+Use this to answer "why both?" during questions.
+
+| | TLA+ with TLC | Lean |
+|---|---|---|
+| You write | The model and the property | The model, the property, and the proof |
+| The tool | Searches every state of a small model | Checks that your proof is valid |
+| Sizes covered | The ones in the `.cfg`, here 1 copy and 2 patrons | All of them |
+| When the property is false | Prints a trace you can read | The proof doesn't go through. You have to find the trace yourself. |
+| Extra work | None for this model | A helper invariant, `Conservation`, because `NeverOverLent` alone isn't strong enough for induction |
+| Trap | A weak property passes | A weak theorem is proved |
+| Use it to | Find design bugs quickly | Prove a design holds at every size, after TLC stops finding bugs |
 
 ### 9. Take-home
 
