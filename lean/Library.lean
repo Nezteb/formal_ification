@@ -2,153 +2,124 @@
 # Library
 
 The same model as `tla/Library.tla`, with the same names. One book with
-`copies` copies. Patrons borrow it and return it. TLA+ names patrons `ana` and
-`ben`. Here patrons are numbered from 0.
+`copies` copies. Patrons borrow it and return it. Patrons are numbers here,
+and TLA+ names them `socrates` and `beelzebub`.
+
+## Symbols
+
+Each symbol's name, then how to type it with the Lean editor extension.
+
+- `∧` "wedge", logical and. Type `\and`.
+- `∨` "vee", logical or. Type `\or`.
+- `¬` "not sign", logical not. Type `\not`.
+- `→` "right arrow", implies, or "function to". Type `\to`.
+- `∃` "there exists", a turned E. `∃ p, ...` means some `p` makes `...` true. Type `\ex`.
+- `∈` "element of", from the Greek letter epsilon. It means "is in the list". Type `\in`.
+- `∉` "not an element of". It means "is not in the list". Type `\notin`.
+- `≤` "less than or equal to". Type `\le`.
+- `⟨a, b⟩` "angle brackets". They build a structure or proof from its parts, in order. Type `\<` and `\>`.
+- `p :: l` "cons". The list `l` with `p` added to the front.
+- `s'` "s prime". The state after a step. The `'` is part of the name, like TLA+'s primes.
+- `t1 <;> t2` runs tactic `t2` on every goal that `t1` leaves.
+- `.init`, `.step` are short for `Reachable.init` and `Reachable.step`, when Lean can tell the type.
+
+## Keywords
+
+- `Nat` whole numbers from 0, `Int` integers, `List Nat` a list of `Nat`s
+- `namespace X` ... `end X` groups names under `X`
+- `structure` a record type with named fields
+- `def` a definition. `: Prop` means it defines a true-or-false statement.
+- `inductive` a type defined by the ways to build it. `Reachable` has two: `init` and `step`.
+- `{ s with f := v }` a copy of `s` with field `f` changed
+- `variable` declares arguments that every theorem below takes automatically
+- `theorem` a statement plus its proof. Lean rejects it if the proof is wrong.
+- `by` starts a proof written as tactics, which are commands that build it
+- `induction h` prove it for `init`, then for each `step`
+- `grind` Lean's built-in automation. The names in `[...]` are definitions it may unfold.
+- `have x : T := ...` proves a step `T` and names it `x`
+- `exact` finishes the proof with the given term
+- `/-- ... -/` a doc comment, and `--` a line comment
 -/
 
 namespace Library
 
-inductive Status where
-  | idle
-  | sawCopy
-  | hasBook
-  deriving DecidableEq
-
-/-- `shelf` is how many copies are on the shelf. `status[p]` is patron `p`'s status. -/
-structure World where
+/-- `shelf` and `loans` are the Agent's state in the Elixir code. `looked` is
+the patrons whose buggy borrow has done `Look` but not `Take`. -/
+structure State where
   shelf : Int
-  status : List Status
+  loans : List Nat
+  looked : List Nat
 
-def Init (copies patrons : Nat) : World :=
-  { shelf := copies, status := List.replicate patrons .idle }
+def Init (copies : Nat) : State := { shelf := copies, loans := [], looked := [] }
 
-/-- The buggy borrow takes two steps. First the patron sees a copy on the shelf. -/
-def Look (p : Nat) (w w' : World) : Prop :=
-  w.status[p]? = some .idle ∧
-  w.shelf > 0 ∧
-  w' = { w with status := w.status.set p .sawCopy }
+/-- The buggy borrow's first step. The patron sees a copy on the shelf. -/
+def Look (p : Nat) (s s' : State) : Prop :=
+  s.shelf > 0 ∧ p ∉ s.loans ∧
+  s' = { s with looked := p :: s.looked }
 
-/-- Later the patron takes it, without checking the shelf again. -/
-def Take (p : Nat) (w w' : World) : Prop :=
-  w.status[p]? = some .sawCopy ∧
-  w' = { shelf := w.shelf - 1, status := w.status.set p .hasBook }
+/-- The buggy borrow's second step. The patron takes the copy, without
+checking the shelf again. -/
+def Take (p : Nat) (s s' : State) : Prop :=
+  p ∈ s.looked ∧
+  s' = { shelf := s.shelf - 1, loans := p :: s.loans, looked := s.looked.erase p }
 
 /-- The fixed borrow checks the shelf and takes the copy in one step. -/
-def Borrow (p : Nat) (w w' : World) : Prop :=
-  w.status[p]? = some .idle ∧
-  w.shelf > 0 ∧
-  w' = { shelf := w.shelf - 1, status := w.status.set p .hasBook }
+def Borrow (p : Nat) (s s' : State) : Prop :=
+  s.shelf > 0 ∧ p ∉ s.loans ∧
+  s' = { s with shelf := s.shelf - 1, loans := p :: s.loans }
 
-def Return (p : Nat) (w w' : World) : Prop :=
-  w.status[p]? = some .hasBook ∧
-  w' = { shelf := w.shelf + 1, status := w.status.set p .idle }
+def Return (p : Nat) (s s' : State) : Prop :=
+  p ∈ s.loans ∧
+  s' = { s with shelf := s.shelf + 1, loans := s.loans.erase p }
 
-def BuggyNext (w w' : World) : Prop := ∃ p, Look p w w' ∨ Take p w w' ∨ Return p w w'
-def FixedNext (w w' : World) : Prop := ∃ p, Borrow p w w' ∨ Return p w w'
+def BuggyNext (s s' : State) : Prop := ∃ p, Look p s s' ∨ Take p s s' ∨ Return p s s'
+def FixedNext (s s' : State) : Prop := ∃ p, Borrow p s s' ∨ Return p s s'
 
-/-- The worlds `next` can reach from `Init`. TLC finds these by searching.
-Here they are a definition we can do induction on. -/
-inductive Reachable (copies patrons : Nat) (next : World → World → Prop) : World → Prop
-  | init : Reachable copies patrons next (Init copies patrons)
-  | step : Reachable copies patrons next w → next w w' → Reachable copies patrons next w'
-
-/-- How many patrons have the book. -/
-def onLoan (w : World) : Nat := w.status.count .hasBook
+/-- The states that `next` can reach from `Init`. TLC finds these by searching.
+Lean needs them written as a definition, so a proof can use induction on them. -/
+inductive Reachable (copies : Nat) (next : State → State → Prop) : State → Prop
+  | init : Reachable copies next (Init copies)
+  | step : Reachable copies next s → next s s' → Reachable copies next s'
 
 /-- We never lend out more copies than we own. -/
-def NeverOverLent (copies : Nat) (w : World) : Prop := onLoan w ≤ copies
+def NeverOverLent (copies : Nat) (s : State) : Prop := s.loans.length ≤ copies
 
-/-- The shelf never holds more copies than we own. This sounds right, and Lean
-proves it for the buggy design. It isn't the property we care about. -/
-def ShelfNeverOverflows (copies : Nat) (w : World) : Prop := w.shelf ≤ copies
-
------------------------------------------------------------------------------
-
-/-- Copies on the shelf plus copies on loan equal copies owned. TLC never needs
-this. Lean does, because `NeverOverLent` alone isn't strong enough to carry
-through a proof by induction. -/
-def Conservation (copies : Nat) (w : World) : Prop := w.shelf + onLoan w = copies
-
-variable {copies patrons : Nat} {w : World}
-
-/-- Changing one patron's status changes the loan count by at most one. -/
-theorem count_set {l : List Status} {p : Nat} {s s' : Status} (h : l[p]? = some s) :
-    (l.set p s').count .hasBook + (if s = .hasBook then 1 else 0) =
-      l.count .hasBook + (if s' = .hasBook then 1 else 0) := by
-  obtain ⟨hp, hs⟩ := List.getElem?_eq_some_iff.mp h
-  rw [List.count_set hp, hs]
-  cases s
-  case hasBook =>
-    have : 0 < l.count .hasBook :=
-      List.count_pos_iff.mpr (by rw [← hs]; exact List.getElem_mem hp)
-    cases s' <;> simp <;> omega
-  all_goals cases s' <;> simp
-
-theorem init_conservation : Conservation copies (Init copies patrons) := by
-  simp [Conservation, onLoan, Init, List.count_replicate]
-
-/-- The buggy design keeps `Conservation` too. The count adds up even while it
-over-lends, because the shelf goes negative. -/
-theorem buggy_conservation (h : Reachable copies patrons BuggyNext w) :
-    Conservation copies w := by
-  induction h with
-  | init => exact init_conservation
-  | step _ hnext ih =>
-    obtain ⟨p, ⟨hs, -, rfl⟩ | ⟨hs, rfl⟩ | ⟨hs, rfl⟩⟩ := hnext
-    · have := count_set (s' := .sawCopy) hs
-      simp [Conservation, onLoan] at *; omega
-    · have := count_set (s' := .hasBook) hs
-      simp [Conservation, onLoan] at *; omega
-    · have := count_set (s' := .idle) hs
-      simp [Conservation, onLoan] at *; omega
-
-/-- The fixed design keeps `Conservation`, and its shelf never goes below 0. -/
-theorem fixed_inv (h : Reachable copies patrons FixedNext w) :
-    Conservation copies w ∧ 0 ≤ w.shelf := by
-  induction h with
-  | init => exact ⟨init_conservation, by simp [Init]⟩
-  | step _ hnext ih =>
-    obtain ⟨p, ⟨hs, hpos, rfl⟩ | ⟨hs, rfl⟩⟩ := hnext
-    · have := count_set (s' := .hasBook) hs
-      simp [Conservation, onLoan] at *; omega
-    · have := count_set (s' := .idle) hs
-      simp [Conservation, onLoan] at *; omega
+/-- Copies on the shelf plus copies on loan equal copies owned. It sounds like
+the right property, and it's true in both designs. -/
+def Conservation (copies : Nat) (s : State) : Prop := s.shelf + s.loans.length = copies
 
 -----------------------------------------------------------------------------
+
+variable {copies : Nat} {s : State}
+
+/-- The buggy design keeps `Conservation`, for any number of copies and
+patrons, because the shelf goes negative while it over-lends. -/
+theorem buggy_conservation (h : Reachable copies BuggyNext s) :
+    Conservation copies s := by
+  induction h <;> grind [Init, Conservation, BuggyNext, Look, Take, Return]
+
+/-- Why this exists: induction on `NeverOverLent` alone fails. Knowing only
+`loans ≤ copies`, Lean can't rule out a state where every copy is out but the
+shelf still shows one, and a `Borrow` from there over-lends. These two facts
+rule that state out. TLC never needs this, because it only visits real states. -/
+theorem fixed_inv (h : Reachable copies FixedNext s) :
+    Conservation copies s ∧ 0 ≤ s.shelf := by
+  induction h <;> grind [Init, Conservation, FixedNext, Borrow, Return]
 
 /-- The fixed design never over-lends, for any number of copies and patrons. -/
-theorem never_over_lent (h : Reachable copies patrons FixedNext w) :
-    NeverOverLent copies w := by
-  have := fixed_inv h
-  simp only [NeverOverLent, Conservation] at *
-  omega
-
-/-- The buggy design passes the weak property, for any number of copies and patrons. -/
-theorem shelf_never_overflows (h : Reachable copies patrons BuggyNext w) :
-    ShelfNeverOverflows copies w := by
-  have := buggy_conservation h
-  simp only [ShelfNeverOverflows, Conservation] at *
-  omega
+theorem never_over_lent (h : Reachable copies FixedNext s) :
+    NeverOverLent copies s := by
+  grind [fixed_inv h, NeverOverLent, Conservation]
 
 /-- The buggy design does over-lend. Lean can't search for this the way TLC
-does. We write out the same 5-step trace TLC prints, and Lean checks each step.
-Patron 0 is Ana and patron 1 is Ben. -/
-theorem buggy_over_lends :
-    ∃ w, Reachable 1 2 BuggyNext w ∧ ¬ NeverOverLent 1 w := by
-  -- 1. shelf = 1, Ana idle, Ben idle
-  have s1 : Reachable 1 2 BuggyNext ⟨1, [.idle, .idle]⟩ := .init
-  -- 2. Ana looks.
-  have s2 : Reachable 1 2 BuggyNext ⟨1, [.sawCopy, .idle]⟩ :=
-    .step s1 ⟨0, .inl ⟨rfl, by decide, rfl⟩⟩
-  -- 3. Ben looks.
-  have s3 : Reachable 1 2 BuggyNext ⟨1, [.sawCopy, .sawCopy]⟩ :=
-    .step s2 ⟨1, .inl ⟨rfl, by decide, rfl⟩⟩
-  -- 4. Ana takes.
-  have s4 : Reachable 1 2 BuggyNext ⟨0, [.hasBook, .sawCopy]⟩ :=
-    .step s3 ⟨0, .inr (.inl ⟨rfl, rfl⟩)⟩
-  -- 5. Ben takes. The shelf is at -1 and 2 copies are out.
-  have s5 : Reachable 1 2 BuggyNext ⟨-1, [.hasBook, .hasBook]⟩ :=
-    .step s4 ⟨1, .inr (.inl ⟨rfl, rfl⟩)⟩
-  exact ⟨_, s5, by simp [NeverOverLent, onLoan]⟩
+does, so we write out TLC's 5-step trace, naming who acts at each step, and
+Lean checks each step. -/
+theorem buggy_over_lends : ∃ s, Reachable 1 BuggyNext s ∧ ¬ NeverOverLent 1 s := by
+  have s1 : Reachable 1 BuggyNext ⟨1, [], []⟩ := .init
+  have s2 : Reachable 1 BuggyNext ⟨1, [], [0]⟩ := .step s1 ⟨0, by grind [Look]⟩
+  have s3 : Reachable 1 BuggyNext ⟨1, [], [1, 0]⟩ := .step s2 ⟨1, by grind [Look]⟩
+  have s4 : Reachable 1 BuggyNext ⟨0, [0], [1]⟩ := .step s3 ⟨0, by grind [Take]⟩
+  have s5 : Reachable 1 BuggyNext ⟨-1, [1, 0], []⟩ := .step s4 ⟨1, by grind [Take]⟩
+  exact ⟨_, s5, by grind [NeverOverLent]⟩
 
 end Library

@@ -6,36 +6,27 @@ defmodule LibraryTest do
 
   # The same property as `NeverOverLent` in TLA+ and `never_over_lent` in Lean.
   # StreamData picks the number of copies and a random list of borrows and
-  # returns, then runs them one at a time against the real code.
+  # returns by 10 patrons, then runs them one at a time against the real code.
   property "never lends out more copies than it owns" do
     check all copies <- integer(1..5),
-              ops <- list_of(member_of([:borrow, :give_back])) do
+              steps <- list_of(tuple({member_of([@borrow, :return]), integer(1..10)})) do
       {:ok, library} = Library.start_link(copies)
 
-      Enum.reduce(ops, 0, fn
-        :borrow, on_loan ->
-          on_loan = if apply(Library, @borrow, [library]) == :ok, do: on_loan + 1, else: on_loan
-          assert on_loan <= copies
-          on_loan
-
-        :give_back, 0 ->
-          0
-
-        :give_back, on_loan ->
-          Library.give_back(library)
-          on_loan - 1
-      end)
+      for {step, patron} <- steps do
+        apply(Library, step, [library, patron])
+        assert MapSet.size(Library.loans(library)) <= copies
+      end
     end
   end
 
-  test "50 patrons at once never get more than 1 copy" do
+  # The same size TLC checks: 1 copy, 2 patrons, borrowing at the same time.
+  test "2 patrons at once never get more than 1 copy" do
     {:ok, library} = Library.start_link(1)
 
-    winners =
-      1..50
-      |> Task.async_stream(fn _ -> apply(Library, @borrow, [library]) end)
-      |> Enum.count(&(&1 == {:ok, :ok}))
+    [:socrates, :beelzebub]
+    |> Task.async_stream(&apply(Library, @borrow, [library, &1]))
+    |> Stream.run()
 
-    assert winners == 1
+    assert MapSet.size(Library.loans(library)) <= 1
   end
 end
