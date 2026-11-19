@@ -9,7 +9,7 @@ defmodule LibraryTest do
     tuple({member_of([:borrow, :hold, :return]), member_of([:ana, :ben, :cy])})
   end
 
-  # Apply each command; rejected commands leave the state unchanged.
+  # Applies each command in order. A rejected command leaves the state unchanged.
   defp run(commands) do
     Enum.scan(commands, Library.new(@copies, buggy: @buggy), fn {op, patron}, lib ->
       case apply(Library, op, [lib, patron]) do

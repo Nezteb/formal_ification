@@ -1,7 +1,7 @@
 ---------------------------- MODULE Library ----------------------------
-\* One book, `Copies` copies, and a first-come-first-served hold queue.
-\* Set `Buggy` to TRUE to plant the bug: returns go back on the shelf even
-\* when someone is waiting.
+\* One book with `Copies` copies and a first-come-first-served hold queue.
+\* Set `Buggy` to TRUE to plant the bug. Every return then puts the copy back
+\* on the shelf, even when someone is waiting.
 
 EXTENDS Naturals, Sequences, FiniteSets
 
@@ -17,7 +17,7 @@ Init ==
   /\ loans = {}
   /\ holds = <<>>
 
-\* Shelf copies are only for walk-ins when nobody is waiting.
+\* You can only borrow from the shelf when nobody is waiting.
 Borrow(p) ==
   /\ shelf > 0
   /\ holds = <<>>
@@ -34,7 +34,7 @@ Hold(p) ==
   /\ holds' = Append(holds, p)
   /\ UNCHANGED <<shelf, loans>>
 
-\* A returned copy goes straight to the head of the queue, if anyone waits.
+\* If anyone is waiting, a returned copy goes straight to the head of the queue.
 Return(p) ==
   /\ p \in loans
   /\ IF holds = <<>> \/ Buggy
@@ -47,7 +47,7 @@ Return(p) ==
 
 Next == \E p \in Patrons : Borrow(p) \/ Hold(p) \/ Return(p)
 
-\* Fairness: anyone with a book eventually returns it.
+\* Weak fairness on Return means anyone with a book eventually returns it.
 Spec == Init /\ [][Next]_vars /\ \A p \in Patrons : WF_vars(Return(p))
 
 -----------------------------------------------------------------------------
@@ -57,7 +57,7 @@ TypeOK ==
   /\ loans \subseteq Patrons
   /\ holds \in Seq(Patrons)
 
-\* The numbers balance.
+\* Copies on the shelf plus copies on loan equal copies owned.
 Conservation == shelf + Cardinality(loans) = Copies
 
 \* Nobody waits while a copy sits on the shelf.

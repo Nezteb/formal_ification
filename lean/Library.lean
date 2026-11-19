@@ -1,9 +1,9 @@
 /-!
 # Library hold queue
 
-Same model as `tla/Library.tla`: one book, a fixed number of copies, a FIFO
-hold queue. TLC checked 3 patrons and 2 copies. Here we prove the invariant for
-*any* number of patrons and copies.
+This is the same model as `tla/Library.tla`. It has one book, a fixed number
+of copies, and a first-come-first-served hold queue. TLC checked 3 patrons and
+2 copies. This file proves the invariant for any number of patrons and copies.
 -/
 
 namespace Library
@@ -20,7 +20,7 @@ inductive Op where
   | hold (p : Patron)
   | ret (p : Patron)
 
-/-- One step. Illegal operations leave the state unchanged. -/
+/-- Apply one operation. An operation the rules forbid leaves the state unchanged. -/
 def step (s : Lib) : Op → Lib
   | .borrow p =>
     if s.shelf > 0 ∧ s.holds = [] ∧ p ∉ s.loans
@@ -80,7 +80,7 @@ theorem step_preserves (copies : Nat) (s : Lib) (op : Op) :
         simp only [List.length_cons]; omega
     · exact ⟨hcons, hqueue⟩
 
-/-- Every reachable state satisfies the invariant, for any sequence of ops. -/
+/-- The invariant holds after any sequence of operations from the starting state. -/
 theorem reachable_inv (copies : Nat) (ops : List Op) :
     Inv copies (ops.foldl step ⟨copies, [], []⟩) := by
   suffices ∀ s, Inv copies s → Inv copies (ops.foldl step s) from

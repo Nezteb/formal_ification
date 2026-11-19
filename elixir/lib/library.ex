@@ -1,9 +1,10 @@
 defmodule Library do
   @moduledoc """
-  One book, a fixed number of copies, a first-come-first-served hold queue.
+  One book with a fixed number of copies and a first-come-first-served hold queue.
 
-  Same rules as `tla/Library.tla` and `lean/Library.lean`. Pass `buggy: true`
-  to plant the bug: returns go back on the shelf even when someone is waiting.
+  The rules match `tla/Library.tla` and `lean/Library.lean`. Pass `buggy: true`
+  to plant the bug. Every return then puts the copy back on the shelf, even
+  when someone is waiting.
   """
 
   defstruct shelf: 0, loans: MapSet.new(), holds: :queue.new(), buggy: false

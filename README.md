@@ -1,36 +1,33 @@
-# Formal Specification, Formal Verification, and Property-Based Tests
+# Formal specification, formal verification, and property-based tests
 
-A 5-10 minute lightning talk. One small domain, three tools, one planted bug.
+This repo holds a 5-10 minute lightning talk. It models one small library, plants one bug in it, and shows what TLA+, Lean, and StreamData each say about the bug.
 
 ## The demo: a library hold queue
 
-One book, 2 copies, 3 patrons (`ana`, `ben`, `cy`). Four rules:
+The library has one book with 2 copies, and 3 patrons named `ana`, `ben`, and `cy`. It follows four rules.
 
 1. If a copy is on the shelf and nobody is waiting, you can borrow it.
 2. If no copy is on the shelf, you can place a hold. Holds are first come, first served.
 3. When you return a copy and someone is waiting, the copy goes straight to the head of the queue.
 4. You can't borrow a book you already have, or hold a book you already have or already hold.
 
-Two properties:
+Every tool checks two properties. `Conservation` says copies on the shelf plus copies on loan equal copies owned. `NoShelfAndQueue` says nobody waits while a copy sits on the shelf.
 
-- **Conservation:** copies on the shelf + copies on loan = copies owned.
-- **NoShelfAndQueue:** nobody waits while a copy sits on the shelf.
+The planted bug makes every return put the copy back on the shelf, even when someone is waiting. Turn it on with `Buggy = TRUE` in TLA+, `buggy: true` in Elixir, or `BUGGY=1` for the tests. `Conservation` still holds, and `cy` waits forever.
 
-**The planted bug** (`Buggy` / `buggy: true` / `BUGGY=1`): returns always go back on the shelf, even when someone is waiting. Conservation still holds. `cy` waits forever.
-
-| Tool | What it says | Strength |
+| Tool | Result | Limit |
 |---|---|---|
-| `tla/` TLC | Correct: passes (10 states). Buggy: deadlock found in 6 states, with a readable trace. The deadlock check is on by default, and the `HoldsGetServed` liveness property fails as well. We never had to ask for `NoShelfAndQueue`. | Exhaustive, but only for this small model |
-| `lean/` | `Conservation ∧ NoShelfAndQueue` holds for *any* number of copies and patrons, after any sequence of operations | A proof for every size, but no notion of time |
-| `elixir/` StreamData | Buggy: "numbers balance" passes. "Nobody waits while a copy is on the shelf" fails and shrinks to `[borrow: :cy, borrow: :ana, hold: :ben, return: :ana]` | Tests the real code, but only what you thought to assert |
+| `tla/` TLC | The correct spec passes after checking 10 states. The buggy spec deadlocks after 6 states, and TLC prints the trace. The `HoldsGetServed` liveness property fails too. Nobody had to write `NoShelfAndQueue` to find it. | Checks every state, but only for 2 copies and 3 patrons |
+| `lean/` | `Conservation ∧ NoShelfAndQueue` holds for any number of copies and patrons, after any sequence of operations | Proves it for every size, but can't express "eventually" |
+| `elixir/` StreamData | With the bug, "the numbers balance" passes. "Nobody waits while a copy is on the shelf" fails and shrinks to `[borrow: :cy, borrow: :ana, hold: :ben, return: :ana]` | Runs the real code, but only checks the properties you wrote |
 
-The point for a skeptical audience: property tests catch the bug *if you write the right property*. TLC finds it without being told what to look for, because a stuck state and a starving patron both fall out of the model. Lean proves the fixed version correct for every size. None of the three proves that the Elixir code matches the spec; see `references/verifying_implementations.md`.
+Property tests catch the bug only if someone wrote the right property. TLC finds it without being told what to look for. Its default deadlock check flags the stuck state, and the liveness property flags the patron who never gets the book. Lean proves the fixed version correct for every size. None of the three proves that the Elixir code matches the spec. `references/verifying_implementations.md` covers ways to close that gap.
 
-Deliberately left out: per-patron limits, hold expiry, multiple books, concurrency (Lab 3), and trace validation.
+The demo leaves out per-patron limits, hold expiry, multiple books, concurrency, and trace validation.
 
 ## Running it
 
-Tool versions (add these to `mise.toml` yourself): `java@21.0.2`, `elixir@1.20.5-otp-27`, `erlang@27.3.4.19`. Lean comes from `elan` via `lean/lean-toolchain` (`v4.36.0`).
+Add `java@21.0.2`, `elixir@1.20.5-otp-27`, and `erlang@27.3.4.19` to `mise.toml`. `elan` installs Lean `v4.36.0` from `lean/lean-toolchain`.
 
 ```fish
 # TLA+ (tla2tools.jar v1.7.4, from github.com/tlaplus/tlaplus releases)
@@ -46,25 +43,25 @@ cd elixir; mix deps.get; mix test
 env BUGGY=1 mix test
 ```
 
-Livebook: open `elixir/notebooks/library.livemd`.
+To step through a run in Livebook, open `elixir/notebooks/library.livemd`.
 
 ### TLC flags worth knowing
 
-`java -cp tla2tools.jar tlc2.TLC -help` prints all of them.
+`java -cp tla2tools.jar tlc2.TLC -help` prints the full list.
 
-- `-config FILE`: model config; defaults to `SPEC.cfg`
-- `-workers N|auto`: worker threads
-- `-deadlock`: turns deadlock checking **off** (the name is misleading)
-- `-difftrace`: prints only what changed between trace states
-- `-dump dot,actionlabels FILE.dot`: writes the state graph
-- `-simulate num=N -depth D`: random simulation instead of exhaustive checking
-- `-metadir DIR`: where the `states/` scratch directory goes
-- Other entry points: `tla2sany.SANY` (parse only), `pcal.trans` (PlusCal to TLA+)
+- `-config FILE` picks the model config. The default is `SPEC.cfg`.
+- `-workers N|auto` sets the number of worker threads.
+- `-deadlock` turns deadlock checking off, despite its name.
+- `-difftrace` prints only what changed between states in a trace.
+- `-dump dot,actionlabels FILE.dot` writes the state graph as a Graphviz file.
+- `-simulate num=N -depth D` runs random traces instead of checking every state.
+- `-metadir DIR` sets where TLC writes its `states/` working directory.
+- `tla2sany.SANY` only parses a spec, and `pcal.trans` translates PlusCal to TLA+. Both are other main classes in the same jar.
 
 ## TODO
 
 - [X] Set up initial TLA+/Lean/Elixir scaffolding
-- [X] Implement the proof of concept (`references/library_hold_queue_plan.md` is the original sketch)
+- [X] Implement the proof of concept , as described in `references/library_hold_queue_plan.md`
 - [X] Add Livebook + Kino for demos/visuals
 - [ ] Come up with high-level `SKILL.md` for formal specification/verification and property-based tests (covering TLA+/Lean specifically, with general references to property-based tests without any focus on a particular language like Elixir/TypeScript/Python)
 

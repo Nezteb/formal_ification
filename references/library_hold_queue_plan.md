@@ -6,9 +6,9 @@
 
 ## Pick: the library hold queue
 
-A small town library. One popular book, two copies. Patrons can borrow, return, or place a hold. Holds go in a queue, first come first served.
+A small town library has one popular book with two copies. Patrons can borrow a copy, return it, or place a hold. Holds go in a queue, first come first served.
 
-This wins because everyone has stood in a queue. The interesting question, "did the person in line actually get the book?", is a *liveness* property, which is where TLA+ pulls ahead of everything else. The Lean question, "does the invariant hold for any number of copies?", is a real proof, not a toy one. The Elixir version is a struct with a `MapSet` and a `:queue`.
+Everyone has stood in a queue, so the audience needs no setup. The interesting question is whether the person in line ever gets the book. That is a liveness property. TLA+ has operators for "eventually" and checks them automatically. Tests can't check it, and Lean has no built-in support for it. The Lean question is whether the invariant holds for any number of copies, which takes a real induction proof. The Elixir version is a struct with a `MapSet` and a `:queue`.
 
 ### The rules, in plain words
 
@@ -17,18 +17,18 @@ This wins because everyone has stood in a queue. The interesting question, "did 
 3. When you return a copy and someone is waiting, the copy goes straight to the head of the queue.
 4. You can't borrow a book you already have, or hold a book you already have or already hold.
 
-Four rules. A twelve-year-old can audit them. That is the point.
+The rules are short enough that anyone in the audience can check them by reading.
 
-Because of rules 1-3, the person at the head of the queue never borrows a copy themselves. A return hands it to them. So "you must be at the head of the queue to borrow" doesn't need its own rule.
+Rules 1-3 mean the person at the head of the queue never borrows from the shelf. A return hands the copy to them. So "you must be at the head of the queue to borrow" doesn't need its own rule.
 
-## What each tool gets to chew on
+## What each tool checks
 
 | | Library hold queue |
 |---|---|
-| **TLA+ invariants** | `Conservation`: copies on the shelf + copies on loan = copies owned. `NoShelfAndQueue`: nobody waits while a copy sits on the shelf. |
-| **TLA+ liveness** | `HoldsGetServed`: everyone who places a hold eventually gets the book. This needs weak fairness on `Return`. Without it, a patron can keep the book forever, and the property fails. |
-| **Lean** | Both invariants hold after *any* sequence of operations, for *any* number of copies and patrons. That is induction over `step`. |
-| **Elixir** | A plain struct, plus pure functions `borrow/2`, `hold/2`, `return/2`. A StreamData property generates command lists and checks the invariants after every step. |
+| TLA+ invariants | `Conservation` says copies on the shelf plus copies on loan equal copies owned. `NoShelfAndQueue` says nobody waits while a copy sits on the shelf. |
+| TLA+ liveness | `HoldsGetServed` says everyone who places a hold eventually gets the book. It needs weak fairness on `Return`. Without fairness, a patron can keep the book forever and the property fails. |
+| Lean | Both invariants hold after any sequence of operations, for any number of copies and patrons. The proof is induction over `step`. |
+| Elixir | A plain struct with pure functions `borrow/2`, `hold/2`, and `return/2`. A StreamData property generates command lists and checks the invariants after every step. |
 
 ## TLA+ sketch
 
@@ -55,7 +55,7 @@ Return(p) ==
             /\ UNCHANGED shelf
 ```
 
-Invariants and liveness:
+These are the invariants and the liveness property. `Waiting` is the set of patrons in `holds`.
 
 ```tla
 Conservation    == shelf + Cardinality(loans) = Copies
@@ -63,11 +63,11 @@ NoShelfAndQueue == shelf > 0 => holds = <<>>
 HoldsGetServed  == \A p \in Patrons : (p \in Waiting) ~> (p \in loans)
 ```
 
-The classic bug: a copy is returned while someone is waiting, but the implementation puts it back on the shelf instead of handing it over. The queue starves and nobody notices, because the numbers still balance. `Conservation` stays true. `NoShelfAndQueue` and `HoldsGetServed` both break.
+The planted bug is a common one. Someone returns a copy while a patron is waiting, and the code puts the copy back on the shelf instead of handing it over. The patron waits forever, and the counts still add up. `Conservation` stays true, while `NoShelfAndQueue` and `HoldsGetServed` both fail.
 
 ## Lean sketch
 
-Model the state as a structure, then prove that every operation preserves the invariant. This teaches induction over traces.
+The state is a structure. The proof shows that every operation preserves the invariant, and then uses induction over the list of operations.
 
 ```lean
 structure Lib where
@@ -85,9 +85,9 @@ theorem reachable_inv (copies : Nat) (ops : List Op) :
     Inv copies (ops.foldl step ⟨copies, [], []⟩)
 ```
 
-`omega` and `simp` won't get you all the way, and that is good. The `return` case needs a small argument: if someone is waiting, then (by the invariant) the shelf is empty. Only then does the arithmetic close.
+`omega` and `simp` can't finish the `return` case alone. That case first needs one fact from the invariant. If someone is waiting, the shelf is empty. After that, `omega` closes the arithmetic. The case is a useful example of automation needing help.
 
-Lean has no built-in notion of time, so `HoldsGetServed` stays on the TLA+ side. That gap is worth saying out loud.
+Lean has no built-in notion of time, so `HoldsGetServed` is only checked in TLA+. The talk should say so.
 
 ## Elixir sketch
 
@@ -109,7 +109,7 @@ def return(lib, patron) do
 end
 ```
 
-The property test applies a generated command list to the real code and checks the invariants after every step:
+The property test runs a generated command list against the real code and checks the invariants after every step.
 
 ```elixir
 property "nobody waits while a copy is on the shelf" do
@@ -121,45 +121,45 @@ property "nobody waits while a copy is on the shelf" do
 end
 ```
 
-StreamData has no built-in state machine module, so you generate command lists and apply them yourself. That is simple, and it's enough here. PropCheck has a `StateM` DSL with better shrinking of command sequences, but we avoid it over licensing concerns.
+StreamData has no state machine module, so the test generates command lists and applies them itself. That approach is short and works for this demo. PropCheck has a `StateM` DSL that shrinks command sequences better, but we don't use it because of licensing concerns.
 
 ## The talk, in order
 
-1. **Rules.** Show the four rules and the two invariants. Ask the audience whether they believe the rules are right.
-2. **The planted bug.** Flip `Buggy` on. Return always puts the copy back on the shelf.
-3. **TLC.** It finds the bug in 6 states, with a trace you can read out loud. Both copies are on the shelf and `cy` waits forever. We never asked about `NoShelfAndQueue`. The deadlock check and `HoldsGetServed` caught it.
-4. **StreamData.** "The numbers balance" still passes. "Nobody waits while a copy is on the shelf" fails and shrinks to a 4-step counterexample. Property tests catch the bug *if you write the right property*.
-5. **Lean.** The fixed version's invariants hold for every size, not just 2 copies and 3 patrons.
-6. **The honest caveat.** None of these proves the Elixir code matches the spec. That is what trace validation is for (see `verifying_implementations.md`).
+1. Show the four rules and the two invariants. Ask the audience whether the rules look right.
+2. Turn on the planted bug. Every return now puts the copy back on the shelf.
+3. Run TLC. It finds the bug in 6 states and prints a trace you can read out loud. Both copies are on the shelf and `cy` waits forever. Nobody wrote `NoShelfAndQueue` to find this. The deadlock check and `HoldsGetServed` caught it.
+4. Run StreamData. "The numbers balance" still passes. "Nobody waits while a copy is on the shelf" fails and shrinks to a 4-step counterexample. Property tests catch the bug only if someone wrote the right property.
+5. Show the Lean proof. The fixed version's invariants hold for every size, not just 2 copies and 3 patrons.
+6. State the limit. None of these tools proves that the Elixir code matches the spec. Trace validation is the usual way to check that, as covered in `verifying_implementations.md`.
 
-## Left out, on purpose
+## Left out on purpose
 
-A 10-minute talk can't fit everything. These are good follow-ups:
+These ideas don't fit in 10 minutes but would make good follow-ups.
 
-- Multiple books, and a per-patron limit (for example, at most 3 books)
-- Hold cancellation and expiry. Liveness becomes "you eventually get the book, or your hold expires."
-- Refinement: a timer spec that refines the basic spec
-- Lean: a two-list queue (`front ++ back.reverse`) with a proof that it really is FIFO
-- Concurrency: one process per book, a coordinator that can crash, `Task.async_stream` with patrons fighting over copies
-- Trace validation: emit NDJSON per operation, replay it through a `TraceSpec` in TLC
+- Multiple books, and a per-patron limit such as at most 3 books
+- Hold cancellation and expiry. Liveness would become "you eventually get the book, or your hold expires."
+- A refinement step, where a spec with timers refines the basic spec
+- A Lean two-list queue, `front ++ back.reverse`, with a proof that it is first in, first out
+- Concurrency, with one process per book, a coordinator that can crash, and `Task.async_stream` running patrons against each other
+- Trace validation, where the code writes one NDJSON line per operation and TLC replays the log through a `TraceSpec`
 
 ## Alternates, if the library does not fit
 
-| Scenario | TLA+ payoff | Lean payoff | Elixir fit |
+| Scenario | TLA+ checks | Lean proves | Elixir version |
 |---|---|---|---|
-| **Parking garage** with entry/exit barriers and capacity counter | Capacity never exceeded, no car trapped, sensor-fault tolerance | Counter bookkeeping, or a two-counter model with a proof they agree | Struct with a counter, easy |
-| **Vending machine** with coins and change | Money conservation, no free snacks, refund correctness | Coin arithmetic in `Nat`, canonical change proves with `omega` | Trivial struct, `:queue` of coins |
-| **Traffic light** at a four-way junction | Never two greens, fairness between directions | State machine safety proof, quite easy, good first Lean exercise | `GenServer` plus `:timer`, fun to watch |
-| **Laundromat** with N machines and tokens | Machine never double-booked, tokens conserved | Token conservation | One process per machine, `Registry` to find them |
-| **Cafeteria with one cashier and a limited tray rack** | Queue liveness, tray conservation, deadlock if trays run out | Tray conservation | Nice use of `:queue` and backpressure |
+| Parking garage with entry and exit barriers and a capacity counter | Capacity is never exceeded, no car is trapped, and sensor faults are tolerated | The counter bookkeeping, or that two counters agree | A struct with a counter |
+| Vending machine with coins and change | Money is conserved, no snack is free, and refunds are correct | Coin arithmetic in `Nat`. `omega` proves canonical change. | A struct with a `:queue` of coins |
+| Traffic light at a four-way junction | Two directions are never green at once, and each direction gets a turn | Safety of the state machine. This is a good first Lean exercise. | A `GenServer` with `:timer` |
+| Laundromat with N machines and tokens | No machine is double-booked, and tokens are conserved | Token conservation | One process per machine, found through `Registry` |
+| Cafeteria with one cashier and a limited tray rack | The queue moves, trays are conserved, and running out of trays deadlocks | Tray conservation | A `:queue` with backpressure |
 
-The vending machine is the easiest Lean on-ramp. The parking garage has the best failure story. The library has the best liveness story, which is what makes TLA+ feel different from everything else.
+The vending machine is the easiest place to start with Lean. The parking garage has the most dramatic failure. The library is the best fit for liveness, and liveness is what TLA+ adds over tests and proofs.
 
 ## Traps worth showing
 
-- **Fairness.** Without `WF_vars(Return(p))`, `HoldsGetServed` is false: a patron can keep the book forever. Fairness assumptions are not optional.
-- **Stuttering.** A spec can always "do nothing", so `~>` and `<>` properties fail unless fairness forces progress.
-- **You only catch what you assert.** A property test checks the properties you wrote, and you wrote both the code and the properties. "The numbers balance" passes on the buggy code.
-- **`omega` and `simp` feel like magic until they don't.** The Lean `return` case needs a helper fact before the automation can finish.
+- **Fairness.** Without `WF_vars(Return(p))`, `HoldsGetServed` fails, because a patron can keep the book forever.
+- **Stuttering.** A TLA+ spec always allows a step that changes nothing. So `~>` and `<>` properties fail unless a fairness condition forces progress.
+- **You only catch what you assert.** A property test checks only the properties you wrote. You also wrote the code, so you may share the bug's blind spot. "The numbers balance" passes on the buggy code.
+- **Automation has limits.** `omega` and `simp` can't finish the Lean `return` case without a helper fact.
 
-Grug says: complexity is the enemy, so keep the rules at four, keep the state to three variables, and let the tools fight over the same small thing.
+Keep the rules at four and the state at three variables. Every tool checks the same small model.

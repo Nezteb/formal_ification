@@ -9,7 +9,7 @@ Mix.install([
 
 ## One run, step by step
 
-Edit the commands, flip `buggy`, re-evaluate. With `buggy: true`, watch `shelf` go above 0 while `holds` is not empty.
+Edit the commands or set `buggy = true`, then re-evaluate the cell. With the bug on, `shelf` goes above 0 while `holds` is not empty, and the `ok` column turns `false`.
 
 ```elixir
 buggy = false
