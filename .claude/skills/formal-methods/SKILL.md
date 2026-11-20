@@ -1,6 +1,6 @@
 ---
 name: formal-methods
-description: Guides writing and reviewing TLA+ specs, Lean proofs, and property-based tests so that a human owns the property, reads the counterexample trace, and checks that the spec matches the code. Use when designing or reviewing concurrent or stateful logic (check-then-act races, inventory, bookings, balances, locks, leases), when asked to write a TLA+ spec, run TLC or tlapm, prove something in Lean, write property-based or stateful tests, or review a spec or proof an LLM wrote.
+description: Guides writing and reviewing TLA+ specs, Lean proofs, and property-based tests so that a human owns the property, reads the counterexample trace, and checks that the spec matches the code. Use when designing or reviewing concurrent or stateful logic (check-then-act races, inventory, bookings, balances, locks, leases), when debugging flaky concurrency tests or races that pass or fail depending on the machine, when asked to write a TLA+ spec, run TLC or tlapm, prove something in Lean, write property-based or stateful tests, or review a spec or proof an LLM wrote.
 ---
 
 # Formal methods that a human can own
@@ -165,11 +165,19 @@ Use the same property, with the same name, against the real code. This is the ch
 | JavaScript, TypeScript | fast-check | `fc.scheduler()` |
 | Python | Hypothesis | `RuleBasedStateMachine` |
 
+**Writing the parallel test.**
+
 - A parallel test needs a model: the expected state, the next state after each call, and the expected result of each call. It passes only if some one-at-a-time order of the parallel calls explains every result. The model is another copy of the spec, so show it to the user next to the property.
+- Keep the model much simpler than the code, or it becomes a second implementation. Keep the sizes small, such as 1 resource and 2 clients, and track only the state the property needs. Add features one at a time after that. Each new one is tested together with the rest, with no new tests to write.
+- Have the model check the error results too, such as an "unavailable" error when nothing is left. A model that only checks successful calls misses wrong errors.
+- Measure what the generator produces. Use `collect` with a true/false value, such as whether both parallel branches call the write, to count the test cases that can expose the bug. `classify` with a single category always reports 100%, so it can't show this. If the `true` share is near 0%, fix the generator before trusting a pass. A good generator finds trouble within 100 test cases.
 - The race doesn't happen on every run, so shrinking can stop early and leave extra steps in the counterexample. Trim them by hand when translating the trace.
-- If a parallel test never finds a known race, PropEr's docs suggest adding `:erlang.yield()` between the read and the write in the code under test. Say so if you add it, because it changes how often the race happens in every other test too.
+- If a parallel test never finds a known race, PropEr's docs suggest adding `:erlang.yield()` between the read and the write in the code under test. Other languages have a similar call to give up the CPU. Say so if you add it, because it changes how often the race happens in every other test too.
+
+**When a race test passes.**
+
 - A plain concurrent test (start N processes at once, then assert) passes or fails depending on scheduling. Run it many times and report the counts, such as "failed 5 of 8 runs". One green run is not evidence.
-- The result can also depend on the machine. A 1-CPU CI runner may run each process to completion and never hit the race. On the BEAM, check with `ELIXIR_ERL_OPTIONS="+S 1"`.
+- The result can also depend on the machine. A 1-CPU CI runner may run each process to completion and never hit the race. Run the test with the runtime limited to 1 CPU too. On the BEAM, that's `ELIXIR_ERL_OPTIONS="+S 1"`.
 - To make a race failure reproducible, suggest deterministic simulation testing. The test controls the clock, thread scheduling, network, and randomness from one seed, so rerunning the same seed replays the same interleaving. It usually takes design work, so suggest it to the user rather than building it.
 
 ### 7. Report
@@ -191,7 +199,7 @@ If someone later splits an atomic update in the code back into a read and a writ
 1. Keep the spec next to the code, with the same names, and review both in the same PR.
 2. Test the same property against the real code (step 6).
 3. Trace validation. The code logs each step, and TLC checks that the log is a behavior the spec allows.
-4. Write the code in Lean, which compiles to native code, so the proved code is the shipped code.
+4. Prove the code itself. Write it in Lean, which compiles to native code, so the proved code is the shipped code. Or, if the code's language has a translator into Lean, prove properties of the translated code. Then what you trust is the translator.
 
 ## Choosing a tool
 
@@ -206,7 +214,7 @@ Start with TLA+. Move to Lean once TLC stops finding bugs and the user needs eve
 
 ## Time and clocks
 
-Neither tool reads a clock. Model time as a variable (`now`) and a `Tick` action that increases it. TLC needs a bound, such as "`now` stays under 10". Clock drift between machines is a bound too, such as "at most 1 second". Every result assumes those bounds. Ask the user to confirm each bound, and list it under "Not checked" in the report.
+Neither tool reads a clock. Model time as a variable (`now`) and a `Tick` action that increases it. TLC needs a bound, such as "`now` stays under 10". Clock drift between machines is a bound too, such as "at most 1 second". Every result assumes those bounds. Ask the user to confirm each bound, and list it under "Not checked" in the report. For a property test on real code, pass the current time in as a parameter or swap in a fake clock, so the test controls when time moves and can shrink it.
 
 ## Terms
 
@@ -250,6 +258,7 @@ Use these as TLA+ defines them, because readers who know the field will notice m
   - https://propcheck.hexdocs.pm/PropCheck.StateM.html
   - https://fast-check.dev/docs/advanced/race-conditions/
   - https://hypothesis.readthedocs.io/en/latest/stateful.html
+  - https://medium.com/@jlouis666/quickcheck-advice-c357efb4e7e6
 - Deterministic simulation testing
   - https://martinfowler.com/articles/deterministic-simulation-testing.html
   - https://antithesis.com/docs/resources/deterministic_simulation_testing/

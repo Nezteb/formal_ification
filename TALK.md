@@ -6,7 +6,7 @@ The talk is for engineers of mixed experience. An LLM can write TLA+, Lean, and 
 
 A library has 1 copy of a book and 2 patrons, Socrates and Beelzebub. The buggy borrow looks at the shelf, then takes the copy in a separate step. The same check-then-act race shows up in ticket sales, inventory, bank balances, and rate limiters.
 
-The spec, the proof, and the code match step for step:
+The spec, the proof, and the code use the same names:
 
 | TLA+ (`tla/Library.tla`) | Lean (`lean/Library.lean`) | Elixir (`elixir/lib/library.ex`) |
 |---|---|---|
@@ -26,7 +26,7 @@ Slide 6 is the easiest to cut.
 |---|---|---|
 | 1 | The bug in plain words | One sentence on the point of the talk, then four lines of story, no code |
 | 2 | The Elixir code | `borrow_buggy/2` next to `borrow/2` |
-| 3 | The tests | The property test, then a green and a red run of the 2-patron test |
+| 3 | The tests | The StreamData property, then a green and a red run of the 2-patron test |
 | 4 | The property, owned by a human | `NeverOverLent`, with the English sentence above it |
 | 5 | The trace | TLC's 5-state trace |
 | 6 | A green check that means nothing | `Conservation` passing on the buggy design, in TLC and Lean |
@@ -100,7 +100,7 @@ Result: 0/1 passed
 Failed: 1 test
 ```
 
-A property test can catch the race if it runs steps in parallel. The "StreamData vs PropEr" backup slide shows one that does, and it fails even with 1 scheduler.
+A property test can catch the race if it runs steps in parallel. The "StreamData vs PropEr" backup slide shows one that does. It fails on the buggy code even with 1 scheduler.
 
 The StreamData property's name, "never lends out more copies than it owns", comes back on slides 4 and 7 as the TLA+ invariant and the Lean theorem.
 
@@ -131,6 +131,8 @@ Read it out loud. It is the same story as slide 1. Paste it into the PR so revie
 ### 6. A green check that means nothing
 
 `Conservation` says copies on the shelf plus copies on loan equal copies owned. It sounds like the right property, and an LLM asked for "an invariant for this library" may write it. TLC passes it on the buggy design, and Lean proves it for the buggy design at every size. In state 5 of the trace, the shelf is at -1 and 2 copies are out, which still adds up to 1.
+
+Balance checks are standard property-test advice. Jesper Andersen's example is that in a transfer between two accounts, the changes must add to zero. They're worth having, but `Conservation` checks the bookkeeping, not the requirement.
 
 TLC and Lean check only the property you give them. Only a human who knows the domain can say whether it is the right one.
 
@@ -222,7 +224,7 @@ Use this to answer "why both?" during questions.
 | Can | Can't |
 |---|---|
 | Prove a property for every size, like every number of copies and patrons | Search for bugs. A false property just fails to prove, with no trace. |
-| Be the program. Lean compiles to native code, so the proved code can be the shipped code. | Model time or concurrency out of the box. Here we wrote `Reachable` ourselves. |
+| Be the program. Lean compiles to native code, so the proved code can be the shipped code. | Model time or concurrency on its own. Here we wrote `Reachable` ourselves. |
 | Type-check the model as you write it | Always write the proof for you. `grind` did here, but `fixed_inv` still needed a person to supply the stronger invariant. |
 | Build on libraries of existing proofs, like Mathlib and CSLib | Check that Elixir code matches the model, unless the code is in Lean or translated into it, as Lynx does |
 
@@ -290,16 +292,18 @@ The demo has no clock, but real application logic often does. Examples are a hol
 
 Both tools share one limit. If the model says "clocks drift by at most 1 second," every result assumes that. If the real servers drift by 5 seconds, the check or proof says nothing about them. A human has to decide that bound and keep it true in production, the same way a human owns `NeverOverLent`.
 
+A property test on the real code can't read a real clock either. Andersen's advice is to pass the current time into the code as a parameter, or swap in a fake clock. Then the test decides when time moves, and can shrink a failure like any other input.
+
 ### Backup slide: StreamData vs PropEr
 
-Use this to answer "could a property test have caught it?" Two test files check the same property with PropEr, an Erlang property testing tool, and both catch the race on the buggy code. `elixir/test/library_propcheck_test.exs` uses PropCheck, an Elixir wrapper for PropEr. `elixir/test/library_proper_test.exs` calls `:proper` directly. The two files are the same apart from those calls.
+Use this to answer "could a property test have caught it?" Two test files check the same requirement with PropEr, an Erlang property testing library, and both catch the race on the buggy code. `elixir/test/library_propcheck_test.exs` uses PropCheck, an Elixir wrapper for PropEr. `elixir/test/library_proper_test.exs` calls PropEr's Erlang modules, such as `:proper`, directly. The two files are the same apart from those calls.
 
 | | StreamData | PropEr |
 |---|---|---|
 | What you write | Generators and a `check all` loop | A model of the library: `command`, `next_state`, and `postcondition` |
 | How it runs the code | One step at a time | A few steps, then two lists of steps at the same time |
 | What it checks | Your assertion after each step | That some one-at-a-time order of the parallel steps explains every result |
-| On the buggy borrow | Passes | Fails, and shrinks to the smallest failing case |
+| On the buggy borrow | Passes | Fails, and usually shrinks to two parallel borrows |
 | License | Apache 2.0 | GPL 3, fine for a test-only dependency, but check your company's policy |
 | Setup | Pure Elixir | Erlang, so Mix builds it with rebar3 |
 
@@ -338,7 +342,7 @@ test "2 patrons borrowing in parallel never get more than 1 copy" do
 end
 ```
 
-| | PropCheck | Plain `:proper` |
+| | PropCheck | PropEr, called directly |
 |---|---|---|
 | Setup | `use PropCheck` and `use PropCheck.StateM` | None. Call the Erlang modules. |
 | Define the test | `property` and `forall` macros | `:proper.forall/2`. Elixir can't use Erlang's `?FORALL` macro, so it calls the function the macro expands to. |
@@ -348,6 +352,11 @@ end
 | Between runs | Saves the counterexample to `_build/propcheck.ctex` and replays it first | Saves nothing |
 
 The model is a third copy of the spec, after the TLA+ and the Lean. A human has to read `next_state` and `postcondition` too.
+
+Two points from Jesper Andersen's "QuickCheck Advice", linked from PropCheck's docs, apply here:
+
+- **Keep the model much simpler than the code.** A model as complete as the code is a second implementation. This one fixes 1 copy and 2 patrons and tracks only who has the copy, and it still finds the bug.
+- **Measure what the generator produces.** Both files `collect` whether both parallel branches borrow, the only shape that can expose the race. `PROPCHECK_VERBOSE=1 mix test test/library_propcheck_test.exs` printed `78.00% [both_branches_borrow: true]`, so 78 of the 100 test cases could expose the race. Andersen's rule of thumb is that a good generator finds trouble within 100 test cases.
 
 Two things to know before using it:
 
@@ -371,7 +380,7 @@ Short definitions of the terms the talk and the files use, with an example from 
 
 #### Properties
 
-- **Property.** A statement about behaviors. A spec has a property if every behavior the spec allows has it.
+- **Property.** A statement about behaviors. A spec has a property if every behavior the spec allows has it. In property-based testing, a property is a statement the test library checks against many generated inputs, such as the StreamData and PropEr tests.
 - **Invariant.** A statement about a single state that is true in every reachable state. `NeverOverLent` and `Conservation` are invariants.
 - **Safety property.** "Something bad never happens." If a behavior breaks one, a finite trace shows it. Every invariant is a safety property.
 - **Liveness property.** "Something good eventually happens", such as "everyone on the waitlist gets the book". No finite trace can break one, because the good thing could still happen later. The demo has none.
@@ -396,5 +405,5 @@ Short definitions of the terms the talk and the files use, with an example from 
 The talk leaves these out to keep the demo small.
 
 - A working liveness and fairness check, such as "everyone on the waitlist eventually gets the book". The time and clocks backup slide covers the idea.
-- Hold queues, multiple books, and per-patron limits
+- Hold queues, multiple books, and per-patron limits. You could add each one as a layer on the same PropEr model. Every run would then test it together with borrows and returns, with no extra tests to write.
 - An example of a spec that disagrees with its code

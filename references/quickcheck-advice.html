@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>QuickCheck Advice</title>
+<link rel="canonical" href="https://medium.com/@jlouis666/quickcheck-advice-c357efb4e7e6#.b9wpla7oi">
+</head>
+<body>
+<h1>QuickCheck Advice</h1>
+<p><a href="https://medium.com/@jlouis666">Jesper L. Andersen</a></p>
+<p>13 min read</p>
+<p>Sep 13, 2014</p>
+<p>Roberto Aloi has written a nice write-up about QuickCheck with a lot of good advice[0]. This is my attempt to add to those notes and come up with a set of additional advice you can use.</p>
+<p>There is one problem I hear again and again with QC. Which is “<em>How do I start on doing this for this particular project?”</em> The premise is that you have an existing project and want to magically QuickCheck it so you can know that it works. However, this leads to the first problem of writing QC tests: coming up with good models.</p>
+<p>In QC, the model reigns supreme. You can only check those things for which you can define a model. So constructing good models is definitely one of the things you want to cover in any exposition.</p>
+<p>Most model construction currently happens by example. You see one model and this leads you to understand how to build other models. The hope is that cross-pollination between the different examples will lead to a person being able to model on his own.</p>
+<p>It turns out that good model construction is an art form. Much like good code can be beautiful, elegant, and a delight to read, so can a proper QuickCheck model. But the skills you need to create one is somewhat more aligned with math than programming. It has to be approached as a new set of skills you have to train for, as you trained in order to become good at programming in the first place.</p>
+<p>There are still some pitfalls from a more generic viewpoint you may want to think about. That is, by reading, you can accellerate your knowledge—like you can when learning a new programming language or concept.</p>
+<h2>Common Model Advice</h2>
+<p>I think the most common problem is when you try to build a model which is as complicated and complete as the System Under Test (SUT). This never ever works. You want a simple model that cuts corners in some way so you don’t have to re-implement the same solution twice. Furthermore, having two equivalent implementations, one in the model and one in the SUT is not going to be a good use of your time.</p>
+<p>So my advice is: Simplify your models!</p>
+<p>Suppose you are checking a data structure of some kind. There is often a simple implementation with vastly different performance characteristics. A good example is a finite map, which can be implemented as a association list in most languages. The idea then is that your model runs as an association list—parallel to the SUT. And if they disagree you know there is a bug in one of them. This allows you to use a simple model, where lookup is O(n), to test an advanced SUT, where lookup is O(lg n). But your model doesn’t have the complexity of the SUT.</p>
+<p>A common trick I use all the time is to come up with very very trivial models. The most trivial one is the totality model. It basically just does random things to the SUT and verifies the SUT doesn’t fail with an exception or crashes. It makes sure the system is robust against odd inputs.</p>
+<p>Another trick is to dilute the precision of the model:</p>
+<ul>
+<li><span>If you check a stack or a queue, you can have a model which just models how many elements are in the stack or the queue.</span></li>
+<li><span>If you check a queue say, you can simplify the model such that there can be at most one element in the queue.</span></li>
+<li><span>Say a configuration parameter can vary from 1 to N. Alter this to vary from 0 to 1.</span></li>
+<li><span>Deliberately have the model support a subset of the SUT.</span></li>
+</ul>
+<p>The goal here is to simplify the model to a point where you can understand it. And then you can “paint” layer on layer and advance the complexity of the model afterwards. A good example is how I built the model for safetyvalve[1]: I started with a model where the queue in the system is empty or full. This simplifies the model a whole lot. Yet this simplified model <em>still</em> found nasty bugs in the implementation.</p>
+<p>Another example is in transit-erlang[2], where the model started out as being able to generate the value ‘null’ only. It generated 100 test cases of the value ‘null’. But then you can gradually extend this. We added UTF-8 Strings, Integers, Timepoints, UUIDs, URIs and so on. When the primitive types worked, we started adding in arrays, maps, lists, sets and so on. Your first version of the model doesn’t have to contain all of the system.</p>
+<h3>More than one</h3>
+<p>Use more than a single model! You much rather want 2 or 3 models which are simple and covering than one large model which tries to be everything. “Modularization” is as important in QC code as it is in other code bases. When you model grows and becomes the size of Quviq’s AUTOSAR models, you need to think about how you split up the model into modules and handle things separately. Otherwise it becomes a mess to maintain.</p>
+<p>Layer your models as well. Write small models checking one aspect of the system. And assume that part is right and write a model on top under the assumption. In fuse[3], we plug in a fake/mock timing system so we can control the passing of time (more on this in the next section). This timing model has a separate QC model so we can be sure it is correct when we use it in the larger set of things. You might say that if QuickCheck properties are theorems, the models further down in the layers are lemmas. While this analogy is not true entirely, the similarities in the way you work is striking.</p>
+<h3>Time</h3>
+<p>Time is a problem in almost all advanced developments where state is part of the system. Once part of the system calls some kind of sleeping or timing library, you have to handle it (In Erlang, a call to ‘timer:sleep/1’ or ‘erlang:now/0’ or a receive clause with an ‘after’ clause is a dead give-away).</p>
+<p>There are two ways to handle time in models: Inject time, or mock time. In the injection solution, you rewrite your SUT such that all calls take an extra parameter, “Now”, and you use this parameter to <em>inject</em> the current time into the system. You can often write your system such that this happens silently to users of your system. Now, since time is injected, it can become part of your model. And your model can choose when it wants to advance time.</p>
+<p>Another solution is to write your code so you can mock timing and plug in another timing module for the normal one. This is what we do in fuse[3]. now, we control the passing of time through the mock, and we can choose when time advances. This means we can reproduce, shrink, and work with time as if it was another parameter of the system.</p>
+<h3>Rewrite your SUT</h3>
+<p>If you have control over the code in the SUT, you can rewrite it. This is often necessary because it can make testing so much easier. Write testable code. Inject parameters rather than call out for them.</p>
+<p>A common rewrite is to add some kind of introspection to the SUT. A call which can expose internal state can be very helpful because it can become part of an invariant check. You want to catch invariant breaches early on so the shrinking can get to work on the right error early on. Safetyvalve[1] exposes internal queue sizes among other things which are then used in postcondition checks.</p>
+<h3>Algebraic properties</h3>
+<p>Exploit algebraic properties of your data! In transit-erlang[2], we use the algebraic principle of an inverse in one direction:</p>
+<pre><code>X =:= decode(encode(X))</code></pre>
+<p>This works at the lowest level for any transfer format or any low-level protocol with an obvious inverse. Other good algebraic properties stems from monoids, group theory, category theory and so on. Sometimes the (group) rules of commutativity, associativity, neutral elements and inverses applies. Sometimes you have an isomorphic property to exploit. If the problem you are working with has the triangle-inequality, use this fact in your models.</p>
+<p>If your problem does not have such properties, it often has some kind of monotonicity or balance guarantee. In a monetary transaction involving two accounts, the change has to add to zero. Time can’t flow backwards. Some systems have convergence properties you can exploit. Adding two positive numbers yield a number strictly larger than the largest one.</p>
+<p>Another algebraic property is to use a transformation to another domain. This is what you do in algebraic topology, where you turn a topology into an algebraic structure. If the algebraic structure of topologies X and Y differ, the topologies themselves must differ. You can for instance be working with functors from Top to Grp. In QuickCheck, the same idea can be exploited easily. You can view a system under some kind of transforming functor and verify properties under the functor.</p>
+<h2>Amplification</h2>
+<p>The “trick” with QC is <em>amplification</em>. You want a simple model. And then randomization of that model leads to a model with a much better amplification factor. Where QC <em>excels</em> is, in the words of Torben Hoffman, in the case where you have rather few things you can do to a SUT, but where these things can be composed. The complexity of the possibilities arising from these compositions is exactly what makes it hard to make sure you caught every corner case.</p>
+<p>Transit-erlang[2] is such an example. Whereas it is fairly easy to test some transit-terms, it is hard to make sure you caught all the interactions. Transit comes with a large unit-test base of <em>exemplars</em> on which you can test your implementation. Yet our QC model has found as many additional interaction problems which the unit tests were unable to find. It easily caught a double-escaping problem, which the standard exemplars did not find since there were no input for this interaction.</p>
+<p>To maximize amplification, it is important to build up your system as many small parts which can compose. To do this, you want to think about generators.</p>
+<h2>Positive &amp; Negative testing</h2>
+<p>There are two polarities in testing:</p>
+<ul>
+<li><span>Positive: If we supply valid inputs, the system behaves as it should.</span></li>
+<li><span>Negative: If we supply invalid inputs, the system does not misbehave.</span></li>
+</ul>
+<p>Most testing is positive. But it is important to inject faults into the system now and then and test that the system behaves correctly, even if faults are injected. It can be used to check that the system has certain robustness properties one wants. One common thing is to make sure that the errors the system reports are consistent with the fault that was injected. In other words, you want to test the “happy path” of a system where it proceeds along the successful path. And you also want to test the system when it strays from the “happy path” and steps onto an errornous one.</p>
+<p>When you do negative testing, it is important that your model knows it is injecting a failure. Otherwise, you can’t check the expected output. Again, simple properties can be enough. If you generate an input which is not among the valid inputs, the system <em>MUST</em> generate some kind of error and give it back. A common thing to test for is that the system is stable and doesn’t crash even if it is supplied invalid inputs.</p>
+<p>Negative testing also has similarities to the security scenario. Namely the notion of <em>fuzzing—</em>where you supply data to a system through a stochastic process in order to make it fail. The idea is that once you have an input leading to crashes, you can try altering the input slightly in order to exploit a missing safety property in the underlying language: that there is a buffer overflow, an integer over/underflow, weak type coercion, forced cast[4], or worse.</p>
+<h2>On Generators</h2>
+<p>The other half of efficient QuickCheck has to do with generators. The idea here is to generate <em>interesting</em> specimens of data for your random inputs. It is also this which sets apart a good QuickCheck implementations from an excellent one.</p>
+<p>The thing is, you actually do not want uniform generators. You want generators which exploit the fact that some numbers are much more problematic in a system. This is also why it doesn't work to automatically derive generators from algebraic data types. You often want fine-tuning control over the generated values.</p>
+<p>In transit-erlang[2], it turns out that powers of two are interesting. A generator of the form</p>
+<pre><code>Sign * math:pow(2, X) + P</code></pre>
+<p>where X is a natural number, Sign is either 1 or -1 and P is a small pertubation in the range -5..5 is highly useful. It instantly found a bug in the Erlang/OTP implementation. It also found numerous bugs because the interesting things often happens at the powers of two values.</p>
+<p>Of course, we only pick this generator some times. We also pick deliberately small and large values. Because we know there are three ways in Transit which you can use to format numbers and we need to be fairly sure we can round-trip over all of these formatting possibilities.</p>
+<p>The power of a generator can be measured in how fast it can find trouble. Ideally, you want a generator to uncover trouble in 100 test cases or less. If a generator needs several thousand samples to generate trouble, it is weak. The reason being that once you compose several generators, the numbers work against you because they are inherently multiplicative. This makes it much harder to find a problematic case.</p>
+<h3>What to generate</h3>
+<p>It is important to discuss table driven unit tests. A table driven unit test is one where we have a large number of test cases driven by a table: given inputs foo and bar, we expect output baz. These are essentially enumeration generations which tries to generate all possible inputs and check the output.</p>
+<p>Where enumerate generators fall short is when the set of possibilities grows exponentially. That is, when there are so many possibilities, that we cannot hope to list them all in a lifetime. In that case, we want to generate things in a stochastic way and skew the distribution so it tends toward the places we believe are hard to get right. The stochastic process aims to capture the fact that we might forget to generate certain particular states. The randomness of the process then solves this by occasionally generating things we did not think about.</p>
+<p>Thus, we want to weight our generators such that they generate states which occur rarely in a real system. After all, the real system will continously check for the common case in production. So we want the corner case to be exposed in the test. This can amount to the fact, that a certain command can only fire in a rarely occurring state. In this case, we might make the command more likely to occur in that particular state. But one has to be vary of doing so.</p>
+<p>First, if we inflate the chance of running command by a too large factor, then our system will <em>always</em> generate that command in the state. This means we don’t get to generate other commands in that state, making our model weaker.</p>
+<p>Second, it may be more beneficial to weigh the system such that the state which is rare occurs more often. Then the command doesn't need changing, since the state is now merely uncommon, but not rare.</p>
+<h3>Measure</h3>
+<p>The commands ‘aggregate’, ‘classify’ and ‘collect’ are there for a reason. To make sure you are generating the right distribution you need to measure if you are generating things like you expect. If the distribution skews too much toward some states, you want to tune the generator. Use the distribution commands to measure that you get the right states.</p>
+<p>Further, you can do as in fuse[3], and add classification to the model. The model records a set of <em>requirements</em> and uses this to verify which requirements are hit in a test run. If a given requirement is not hit, this is bounds for worry. The way this works is that there is a set in the model and each path taken in the model is annotated with the requirements this path covers:</p>
+<pre><code>R01 - Heal non-installed fuse (must never be triggered)
+R02 - Heal installed fuse (only if blown already)
+
+Group install:
+R03 - Installation of a fuse with invalid configuation
+R04 - Installation of a fuse with valid configuration
+
+Group Reset:
+R05 - Reset of an uninstalled fuse
+R06 - Reset of an installed fuse (blown and nonblown)
+
+Group Melt:
+R11 - Melting of an installed fuse
+R12 - Melting of an uninstalled fuse
+
+Group run/2:
+R07 - Use of run/2 on an ok fuse
+R08 - Use of run/2 on a melted fuse
+R09 - Use of run/2 on an ok fuse which is melted in the process
+R10 - Use of run/2 on an uninstalled fuse
+
+Group blow:
+R13 - Blowing a fuse
+R14 - Removing melts from the window by expiry
+
+Group ask/1:
+R15 - Ask on an installed fuse
+R16 - Ask on an uninstalled fuse</code></pre>
+<p>after a test run, we can see what requirements were hit by that run. This makes it easy to check we are generating the right values.</p>
+<h3>Shrinking</h3>
+<p>The final key to good generators are to make them shrink well. A failing test is of no use if we can’t figure out what is wrong and fix it. To help with this, it is crucial that when we generate a failing test, we can generate a minimal failing test.</p>
+<p>When building generators, it is worth spending some time on how they will shrink. Roberto’s post[0] has much more detail on how to do this. But one additional trick is to build stuff as (binary) trees rather than as lists and then shrink toward one of the subtrees. This is also good when generating command sequences. From transit-erlang, we have the following snippet, illustrating the idea:</p>
+<pre><code>transit_l(0, _N, _G) -&gt; [];
+transit_l(1, N, G) -&gt; ?LET(E, G(N), [E]);
+transit_l(Sz, N, G) -&gt;
+     ?LETSHRINK([L, R],
+                [transit_l(Sz div 2, N div 2, G),
+                 transit_l(Sz div 2, N div 2, G)],
+      L ++ R).</code></pre>
+<p>The idea here is that to generate a list of size Sz, generate two halves, L and R and join them. The ?LETSHRINK combinator then shrinks to either the left or the right subtree. This allows the system to shrink a test case like this:</p>
+<pre><code>#{4436653002 =&gt; ferb,
+ 5011044860 =&gt; {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”a324f310-c501–70cd-fc42–9fa0d338a2be”&gt;&gt;},
+ 7244902917 =&gt; phineas,
+ 9902687802 =&gt; &lt;&lt;243,130,156,156,242,175,144,182,243,138,135,130,241,179,179,172,240,148,
+ 189,144,242,135,131,184,242,166,183,178,240,183,172,145,243,162,163,151,
+ 242,142,161,191,241,129,145,131&gt;&gt;,
+ ‘Z’ =&gt; &lt;&lt;&gt;&gt;,
+ undefined =&gt; ab,
+ {transit_datetime,{11,397133,962000}} =&gt; ‘~n’,
+ {transit_datetime,{20,604233,708000}} =&gt; -1702153900,
+ {transit_datetime,{22,775839,627000}} =&gt; undefined,
+ {transit_datetime,{31,458072,234000}} =&gt; ‘o!,:T(\\U’,
+ {tagged_value,&lt;&lt;”$”&gt;&gt;,
+ &lt;&lt;230,151,157,242,165,189,129,240,177,176,139,241,188,140,188&gt;&gt;} =&gt; undefined,
+ {tagged_value,&lt;&lt;”$”&gt;&gt;,
+ &lt;&lt;240,180,151,136,243,135,161,189,242,162,136,190,241,166,131,
+ 171,241,185,167,136,242,175,133,152&gt;&gt;} =&gt; -10,
+ {tagged_value,&lt;&lt;”$”&gt;&gt;,
+ &lt;&lt;240,186,155,149,240,181,187,174,240,153,172,150,242,131,135,
+ 166,241,131,133,188,243,130,164,149,242,152,163,189,240,148,
+ 128,150,240,177,175,134,241,147,179,155&gt;&gt;} =&gt; {tagged_value,&lt;&lt;”$”&gt;&gt;,&lt;&lt;”ab”&gt;&gt;},
+ {tagged_value,&lt;&lt;”$”&gt;&gt;,
+ &lt;&lt;243,141,149,191,241,139,155,176,241,182,160,135,231,158,190,
+ 243,155,145,149,241,152,166,180,240,190,162,169,238,185,173&gt;&gt;} =&gt; {transit_datetime,{20,448876,895000}},
+ {tagged_value,&lt;&lt;”$”&gt;&gt;,&lt;&lt;243,174,183,155,241,133,153,138,242,150,149,184&gt;&gt;} =&gt; {tagged_value,&lt;&lt;”$”&gt;&gt;,
+ &lt;&lt;243,173,134,191,241,133,140,190,243,180,132,146,242,173,190,
+ 187,243,153,140,136,243,150,159,156,243,156,169,148,242,155,
+ 148,135,241,145,140,140,240,181,153,168&gt;&gt;},
+ {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”08f7fe71–1070–4345-a252–7f0724608fe6&quot;&gt;&gt;} =&gt; {transit_datetime,{15,520256,575000}},
+ {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”4040908a-783b-47a7–9fde-fff8040aba59&quot;&gt;&gt;} =&gt; undefined,
+ {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”4236b550–00de-f0ac-3abf-14250dc28585&quot;&gt;&gt;} =&gt; {transit_datetime,{12,165752,72000}},
+ {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”706998d9–7a0c-0a9b-17d5–1840b630a728&quot;&gt;&gt;} =&gt; {tagged_value,&lt;&lt;”$”&gt;&gt;,&lt;&lt;”abcdefg”&gt;&gt;},
+ {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”b0ea26b5-c974–813a-5be1-d7c4fe21a024&quot;&gt;&gt;} =&gt; {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”7b4ebcb3–0e70–8316-e76f-ca463210f38c”&gt;&gt;},
+ {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”c762ae1a-f244–7d11–0e25-ac91c48bd9b0&quot;&gt;&gt;} =&gt; {transit_datetime,{22,869945,242000}},
+ {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”ed9327c2–618b-e07d-b94b-ba904153af41&quot;&gt;&gt;} =&gt; candace,
+ &lt;&lt;&gt;&gt; =&gt; {tagged_value,&lt;&lt;”$”&gt;&gt;,&lt;&lt;”candace”&gt;&gt;},
+ &lt;&lt;240,160,159,166,236,153,160&gt;&gt; =&gt; &lt;&lt;239,132,182,240,188,170,150,240,146,175,153,242,143,130,146,241,141,136,
+ 175,226,169,191&gt;&gt;,
+ &lt;&lt;243,130,128,128,242,190,135,186,242,150,137,163,242,158,184,137,242,157,
+ 182,146,242,144,187,173,243,175,159,129&gt;&gt; =&gt; undefined,
+ &lt;&lt;243,161,177,185,241,137,128,174,242,146,159,168,243,162,144,131,242,159,
+ 144,145,241,170,176,180,240,145,178,134,242,157,162,170,241,139,164,146,
+ 233,130,188,242,128,177,191&gt;&gt; =&gt; {tagged_value,&lt;&lt;”u”&gt;&gt;,&lt;&lt;”ef5a0950–7fbe-27bb-3fc4–94750b80ae64&quot;&gt;&gt;},
+ &lt;&lt;243,164,149,152,226,128,158,242,149,135,146,241,136,144,169,243,153,139,
+ 153,243,144,189,173,243,164,135,191,242,185,169,164&gt;&gt; =&gt; {tagged_value,&lt;&lt;”$”&gt;&gt;,
+ &lt;&lt;241,143,181,181,241,128,158,186,240,145,132,143,242,146,
+ 157,179,242,130,150,132&gt;&gt;}}</code></pre>
+<p>Down to this:</p>
+<pre><code>#{undefined =&gt; ‘~^’}</code></pre>
+<p>which was much easier to work with and figure out.</p>
+<p>This is why proper shrinking matters. Somewhere inside the big blurb of text, a more complicated variant of the simple test is hiding. But if we can’t minimize the input and find it, we will have no chance at catching these kinds of bugs.</p>
+<p>This is also why you should know how combinators for generators shrink. By knowing the minimization patterns, you get a much better generator.</p>
+<h2>Parting words</h2>
+<p>This ended up being much longer than I envisioned. It took two hipster-retro lattes, one coffee shop, liqorice, overhearing a conversation about studies, a happy waitress waiting for her boyfriend to get off work, and a rainy day full of downpour to write this. Interestingly, since I forgot my headphones, no music were involved in the making.</p>
+<p>[0] <a href="http://roberto-aloi.com/erlang/notes-on-erlang-quickcheck/">http://roberto-aloi.com/erlang/notes-on-erlang-quickcheck/</a></p>
+<p>[1] <a href="http://github.com/jlouis/safetyvalve">http://github.com/jlouis/safetyvalve</a></p>
+<p>[2] <a href="http://github.com/isaiah/transit-erlang">http://github.com/isaiah/transit-erlang</a></p>
+<p>[3] <a href="http://github.com/jlouis/fuse">http://github.com/jlouis/fuse</a></p>
+<p>[4] In a way, SQL Injections are just a variant of a weak type coercion, where an SQL expression gets intermingled with a parameter “hole” in that expression. It is most often due to this weak stringly typed identification we see problems with SQL injection.</p>
+</body>
+</html>

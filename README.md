@@ -2,6 +2,8 @@
 
 This repo holds a 5-10 minute lightning talk. An LLM can write TLA+, Lean, and property tests. They only help if a human reads the property, reads the trace, and checks that the model matches the real code. `TALK.md` has the slide map and short definitions of terms like invariant, theorem, and lemma.
 
+See `.claude/skills/formal-methods/SKILL.md` for the skill (a primary deliverable for this demo).
+
 ## The demo: the last copy
 
 A library has 1 copy of a book and 2 patrons, `socrates` and `beelzebub`. The buggy borrow looks at the shelf, then takes the copy in a separate step. If both patrons look before either one takes, both walk out with the book.
@@ -14,7 +16,7 @@ A human writes the property as one sentence: we never lend out more copies than 
 | `lean/` | The same model with the same names. Lean proves the fixed design never over-lends at every size, and proves `Conservation` for the buggy design. | Covers every size, but you write the proof, and it proves only the statement you wrote |
 | `elixir/` StreamData (`library_stream_data_test.exs`) | Random sequences of borrows and returns pass on the buggy code. | Runs the real code, one step at a time |
 | `elixir/` ExUnit (`library_concurrent_test.exs`) | Socrates and Beelzebub borrow the buggy code's 1 copy at the same time. It failed 20 of 20 runs on a multi-core laptop, and passed 5 of 5 with 1 scheduler (`ELIXIR_ERL_OPTIONS="+S 1"`), like a 1-CPU CI runner. | Runs the real code, but whether it catches the race depends on the machine |
-| `elixir/` PropEr (`library_propcheck_test.exs`, `library_proper_test.exs`) | Runs two lists of borrows and returns at the same time and checks the results against a model, once through PropCheck and once through plain `:proper`. Both fail on the buggy code and usually shrink to two parallel borrows. | Runs the real code, but needs a model, and shrinking can stop early because the race doesn't happen every run |
+| `elixir/` PropEr (`library_propcheck_test.exs`, `library_proper_test.exs`) | Runs two lists of borrows and returns at the same time and checks the results against a model, once through PropCheck and once through PropEr's Erlang modules directly. Both fail on the buggy code and usually shrink to two parallel borrows. | Runs the real code, but needs a model, and shrinking can stop early because the race doesn't happen every run |
 
 ## Running it
 
@@ -75,6 +77,10 @@ PropEr is an Erlang package, so Mix builds it with rebar3. If `mix deps.get` ask
   - https://github.com/proper-testing/proper
   - https://proper-testing.github.io/apidocs/proper_statem.html
   - https://propcheck.hexdocs.pm/PropCheck.StateM.html
+  - https://medium.com/@jlouis666/quickcheck-advice-c357efb4e7e6
+    - Jesper Andersen on simple models, measuring generators, shrinking, and time
+  - https://medium.com/@jlouis666/breaking-erlang-maps-4-4ebc3c64068c
+    - Part 4 of a series where a layered QuickCheck model found a segfault in Erlang's maps
 
 ## Future work
 

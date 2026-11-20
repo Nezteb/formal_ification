@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Breaking Erlang Maps #4</title>
+<link rel="canonical" href="https://medium.com/@jlouis666/breaking-erlang-maps-4-4ebc3c64068c#.4d61kua92">
+</head>
+<body>
+<p><a href="https://medium.com/tag/quickcheck">Quickcheck</a></p>
+<p><a href="https://medium.com/tag/testing">Testing</a></p>
+<p><a href="https://medium.com/tag/erlang">Erlang</a></p>
+<h1>Breaking Erlang Maps #4</h1>
+<p><a href="https://medium.com/@jlouis666">Jesper L. Andersen</a></p>
+<p>6 min read</p>
+<p>Apr 9, 2015</p>
+<p>In this update, we continue the work on QuickChecking Erlang maps, and extend the model further by adding more layers on top of what we already have. There are already previous parts:</p>
+<p><a href="https://medium.com/p/31952b8729e6">https://medium.com/p/31952b8729e6</a></p>
+<h2>Breaking Erlang Maps #1</h2>
+<h3>First part in a series of an Erlang maps() QuickCheck model.</h3>
+<p>medium.com</p>
+<p><a href="https://medium.com/p/362730a91400">https://medium.com/p/362730a91400</a></p>
+<h2>Breaking Erlang Maps #2</h2>
+<h3>This is part 2 in my work on using QuickCheck for Erlang to find errors in maps.</h3>
+<p>medium.com</p>
+<p><a href="https://medium.com/p/f008b5f714c5">https://medium.com/p/f008b5f714c5</a></p>
+<h2>Breaking Erlang Maps #3</h2>
+<h3>Testing for collisions in the HAMT hash.</h3>
+<p>medium.com</p>
+<p>In Part 1, we set up the basic generators. In Part 2, we introduced the use of a stateful model to track what happens “inside” the map, as we generate and execute random tests. In Part 3, we addressed a major problem in a Map-implementation: how it handles key collisions.</p>
+<p>The power of having a model for a subsystem is layering. Whenever you get a new idea on how you can improve the model, that improvement gets mixed in with every other idea you’ve had automatically. It improves correctness of an implementation because any discrepancy is quickly found. Seemingly small changes can have profound effects because the change propagates into areas of the code base where you had no idea it would cause trouble.</p>
+<p>Also, resource-wise, the payoff is we don’t have to write a separate test for every combination we come up with. While QuickCheck modeling is not free, the time spent writing such a model is a fraction of the time you need to write the full test suite. And as you layer more ideas on top, the time-to-mix-in is constant, rather than exponential.</p>
+<h2>Improving the collider</h2>
+<p>The collision generator used in Part 3 is running on a single core only, and it is run for a short amount of time. Thus, it only generates colliding sibling pairs, [K1, K2]. We would like to generate larger sibling sets, [K1, K2, …, Ki]. The way to do this is to parallelize the computation. First, we note that most of the work on the ETS table will be failing reads on slots. Thus, we configure the ETS table in the collision system to have <em>read_concurrency</em> which means there is a group of RW-lock on it so we don’t block threads from each other:</p>
+<pre><code>Table = ets:new(generator_table,
+                [bag, {read_concurrency, true}, public]),</code></pre>
+<p>and then we populate the table with 256.000 elements generated from a PRNG. For finding collisions, we write an iterator which is given a unique random seed. Whenever one is found, it writes that to the table invoking the Write-part of the RW-lock on the ETS table:</p>
+<pre><code>iterate_init(Table) -&gt;
+    RandSeed = rand:seed_s(exs64, unique_value()),
+    iterate(Table, RandSeed, ?ITERATIONS).
+
+iterate(_Table, _Seed, 0) -&gt; ok;
+iterate(Table, Seed, K) -&gt;
+    {I, NextSeed} = rand:uniform_s(?RANGE, Seed),
+    Hash = internal_hash(I),
+    case ets:member(Table, Hash) of
+        true -&gt;
+            ets:insert(Table, {Hash, I}),
+            ok;
+        false -&gt;
+            ok
+    end,
+    iterate(Table, NextSeed, K-1).</code></pre>
+<p>Next, we spawn workers doing this and await their completion:</p>
+<pre><code>fanout(Table, Cores) -&gt;
+    collect([spawn_monitor(
+               fun() -&gt;
+                   iterate_init(Table)
+               end) || _ &lt;- lists:seq(1, Cores)]).
+
+collect([]) -&gt; ok;
+collect([{_Pid, Ref} | Monitored]) -&gt;
+   receive
+       {&#39;DOWN&#39;, Ref, _, _, normal} -&gt;
+           collect(Monitored);
+       {&#39;DOWN&#39;, Ref, _, _, Otherwise} -&gt;
+           exit(Otherwise)
+   end.</code></pre>
+<p>This generates a far nastier set of collisions, where there are many siblings present for each value:</p>
+<pre><code>[[49527266765044,90940896816021,20062927283041,267080852079651],
+ [249858369443708,206247021789428,20287304470696,25847120931175],
+ [10645228898670,224705626119556,267405565521452,258214397180678],
+ [264783762221048,166955943492306,98802957003141,102012488332476],
+ [69425677456944,177142907243411,137138950917722,228865047699598],
+ [116031213307147,29203342183358,37406949328742,255198080174323],
+ [200358182338308,235207156008390,120922906095920,116215987197289],
+ [58728890318426,68877471005069,176496507286088,221041411345780],
+ [91094120814795,50665258299931,256093108116737,19777509566621],
+ [74646746200247,98350487270564,154448261001199,39881047281135],
+ [23408943649483,164410325820923,248161749770122,274558342231648],
+ [169531547115055,213630535746863,235098262267796,200508473898303],
+ [235098564415817,85039146398174,51721575960328,173069189684390],
+ [176136386396069,155368359051606,147817099696487,265419485459634],
+ [137542881551462,40028925519736,70525669519846,63445773516557],
+ [173854695142814,114282444507812,149945832627054,99605565798831],
+ [177686773562184,127158716984798,132495543008547],
+ [227073396444896,139667311071766,158915951283562],
+ [26212438434289,94902985796531,198145776057315],
+ [266279278943923,58550737262493,74297973216378],
+ [32373606512065,131854353044428,184642643042326],
+ [34335377662439,85341895822066,273492717750246],...</code></pre>
+<p>Running with this new collision set on the Erlang/OTP tree at that point in time, lead to a segmentation fault, on an unknown map: when the segfault occurs, we have no way to know which map invoked the system fault since it is gone with the crash.</p>
+<h2>Distribution to the rescue</h2>
+<p>Much of Erlangs semantics are constrained by its support for seamless distribution. It is a very powerful concept since the program you are running can be spread out over multiple nodes. The nodes can live on the same machine, or they can be spread out over multiple physical machines.</p>
+<p>People have asked me why I introduced the <strong>maps_runner</strong> process to run the map rather than simply doing it in the model itself. At that time, it was an intuitive hunch, but now I have a real use for the split. We <em>run the maps code on a separate node().</em> By splitting the model and the map over two nodes, a crash of one node, due to a segfault, can be handled gracefully. We just need our system to use Erlangs <em>global</em> process registry for handling the name of the ‘maps_runner’. Then the system can look up where the map is currently living in the distributed cloud and proceed to talk with it.</p>
+<p>We just alter the maps runner, so it understands it needs to register itself globally:</p>
+<pre><code>start_link() -&gt;
+    gen_server:start_link({global, ?MODULE}, ?MODULE, [], []).</code></pre>
+<p>and that you call it by looking up where it is in the ‘global’ registry:</p>
+<pre><code>call(X) -&gt;
+    gen_server:call({global, ?MODULE}, X).</code></pre>
+<p>Now, to make sure the maps_runner is started, we implement a function which requires a reply from the other side and retries a number of times:</p>
+<pre><code>ensure_started(_Node, 0) -&gt; exit(gave_up_starting);
+ensure_started(Node, K) -&gt;
+    ReplyPid = self(),
+    Pid = spawn(Node,
+      fun() -&gt;
+        start(),
+        timer:sleep(10),
+        ReplyPid ! {started, self()}
+      end),
+    receive
+        {started, Pid} -&gt; ok
+    after 500 -&gt;
+        ensure_started(Node, K-1)
+    end,
+    global:sync(),
+    reset(),
+    ok.</code></pre>
+<p>Now, if the node on which the maps_runner is living crashes and comes up again, the test can establish the guarantee that there is a runner available before it proceeds to carry out the test. This happens under test case shrinking, where the runner node will crash thousands of times and get restarted. But the model, running on another node, will be intact and since it doesn’t invoke the failing maps code, it will survive and proceed to minimize the test case.</p>
+<p>To use it, you simply start two nodes, and put one under Erlangs “heart” program, which monitors the node with heartbeats and restarts it under crashes. And that is all there is to it! Now test cases can be minimized — even if the C code has errors — and we can obtain good small counterexamples.</p>
+<p>The result was that we found some very subtle C promotion rule faults, where certain types did not retain the correct sign — and it was fixed in hours by the OTP team. The following counter example crashed the system:</p>
+<pre><code>L =
+    [{58550737262493, &lt;&lt;&gt;&gt;},
+     {&lt;&lt;&gt;&gt;, foo},
+     {85341895822066, &lt;&lt;&gt;&gt;}, {19777509566621, &lt;&lt;&gt;&gt;},
+     {51721575960328, 0}, {58550737262493, 0.0},
+     {&lt;&lt;&gt;&gt;, false}, {0.0, 97}, {&lt;&lt;&gt;&gt;, &lt;&lt;&gt;&gt;}, {97, flower},
+     {74297973216378, []}, {&lt;&lt;&gt;&gt;, 0.0},
+     {58550737262493, foo},
+     {&lt;&lt;&gt;&gt;, 97}, {0.0, 97},
+     {63445773516557, foo},
+     {273492717750246, &lt;&lt;&gt;&gt;}, {flower, &lt;&lt;&gt;&gt;},
+     {&lt;&lt;&gt;&gt;, flower}, {266279278943923, &lt;&lt;&gt;&gt;},
+     {224705626119556, 0}, {&lt;&lt;&gt;&gt;, false}, {97, foo},
+     {31395337272657, &lt;&lt;&gt;&gt;}, {31395337272657, 0},
+     {20062927283041, false}, {184642643042326, &lt;&lt;&gt;&gt;},
+     {94403308189279, &lt;&lt;&gt;&gt;}, {&lt;&lt;&gt;&gt;, false}, {0, 97},
+     {10645228898670, 97}, {0, &lt;&lt;&gt;&gt;},
+     {177142907243411, foo}].
+M = maps:from_list(L).
+Segmentation fault (core dumped)</code></pre>
+<p>The layering power is apparent here. We’ve had extensive tests of ‘maps:from_list/1’ already. Yet, that is where the error shows itself. Had we not generated the test cases, it would have been likely we would not have checked this particular pairing, simply because it would take too long to write the test cases for all invocation combinations.</p>
+<h2>Coverage checking</h2>
+<p>We have also compiled the Erlang run-time to execute under gcov and have verified the current coverage of the code base. It is around 85% and we have not done anything specifically to get it high. The coverage run gave some hints on something we wanted to test however.</p>
+<p>When doing tests, I’ve noted the importance of negative testing. If you give bad input to a function, you must check that it crashes. We have added a command which deliberately generates illegal input to all ‘maps’ module functions. It then verifies the function returns {error, badarg} or similar upon failure. This did not uncover any bugs, but it acts as a tracking point if/when the error reason changes, which it is destined to do in 18.0 before release. A bad key lookup will return ‘{badkey, K}’ for instance, so you know what key you looked up as part of the error. Having nailed down the errors also verified that there are no change from 17.5 to 18.0-rc1 in the return values currently.</p>
+<p>This post was based on git Commit-ID 1bcf39b8156.</p>
+<p><a href="https://github.com/jlouis/maps_eqc/tree/1bcf39b8156ead129030079fc2e1843d56bb2998">https://github.com/jlouis/maps_eqc/tree/1bcf39b8156ead129030079fc2e1843d56bb2998</a></p>
+<h2>jlouis/maps_eqc</h2>
+<h3>maps_eqc - EQC tests for maps</h3>
+<p>github.com</p>
+</body>
+</html>
