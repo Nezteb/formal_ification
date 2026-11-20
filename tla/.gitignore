@@ -1,3 +1,11 @@
 /states/
 /tlapm/
 /.tlacache/
+
+# TLA+ Toolbox
+/*.toolbox/*/*
+!/*.toolbox/*/*.tla
+!/*.toolbox/*/*.cfg
+!/*.toolbox/.settings/*
+/*.toolbox/*_SnapShot_*
+/*.toolbox/*.launch
