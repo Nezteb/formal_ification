@@ -25,7 +25,7 @@ the math symbol it stands for in quotes, and what it means.
 Keywords.
 
   `MODULE`      names the file. `----` lines are separators, and `====` ends it.
-  `EXTENDS`     imports modules. `Naturals` has numbers, `FiniteSets` has `Cardinality`, which is a set's size.
+  `EXTENDS`     imports modules. `Integers` has numbers, including negative ones. `FiniteSets` has `Cardinality`, which is a set's size.
   `CONSTANTS`   values the `.cfg` file picks, like `Patrons` and `Copies`.
   `VARIABLES`   the state, which changes from step to step.
   `==`          defines a name, like `Init` or `Look(p)`.
@@ -40,13 +40,17 @@ separate tool, can check proofs written in TLA+ with `THEOREM` and `PROOF`,
 the way Lean does. `PROOF OMITTED` skips a proof step, like Lean's `sorry`.
 ***************************************************************************)
 
-EXTENDS Naturals, FiniteSets
+EXTENDS Integers, FiniteSets
 
 CONSTANTS Patrons, Copies
 
 \* `shelf` and `loans` are the Agent's state in the Elixir code.
 \* `looked` is the patrons whose buggy borrow has done `Look` but not `Take`.
 \* In Elixir, that's a process between its `Agent.get` and its `Agent.update`.
+\* Because `looked` is a set, each patron has at most one borrow in progress.
+\* The code doesn't enforce this. To allow more, make `looked` a count per
+\* patron. It starts at `[p \in Patrons |-> 0]`, `Look` adds 1, and `Take`
+\* subtracts 1. The fixed `Borrow` needs no change, because it is one step.
 VARIABLES shelf, loans, looked
 vars == <<shelf, loans, looked>>
 

@@ -77,7 +77,7 @@ Write the spec in TLA+ first, because TLC needs no proof. Use this shape:
 
 ```tla
 ---- MODULE Pool ----
-EXTENDS Naturals, FiniteSets
+EXTENDS Integers, FiniteSets
 CONSTANTS Clients, Capacity
 VARIABLES available, holders, checked
 vars == <<available, holders, checked>>
@@ -97,6 +97,8 @@ NeverOverAllocated == Cardinality(holders) <= Capacity
 ```
 
 Model the gap between a read and a write as its own variable (`checked` above). In the code it has no variable of its own. It is a process waiting between two calls. Say so in the mapping table. The fixed design replaces `Check` and `Claim` with one action that does both, the way an atomic update, a transaction, or a compare-and-swap does in the code.
+
+Use `Integers`, not `Naturals`, when a buggy step can push a count below 0, like `Claim` above. TLC computes `0 - 1` anyway, but `Naturals` doesn't define it, so a TLAPS proof can't use it.
 
 ### 3 and 4. Model check
 

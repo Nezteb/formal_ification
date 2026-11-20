@@ -192,7 +192,7 @@ defp take(library, patron) do
 end
 ```
 
-Both are short, and anyone who reads Elixir can check them line by line. The `shelf` and `loans` lines match. The two `looked` lines have no Elixir line, because in the code `looked` is a process waiting between its `Agent.get` and its `Agent.update`. A reviewer has to know that to accept the match.
+Both are short, and anyone who reads Elixir can check them line by line. The `shelf` and `loans` lines match. The two `looked` lines have no Elixir line, because in the code `looked` is a process waiting between its `Agent.get` and its `Agent.update`. A reviewer has to know that to accept the match. The spec also assumes each patron runs one borrow at a time. The code doesn't check that, so a reviewer has to accept it too.
 
 ### 9. Nothing checks the match
 
@@ -265,8 +265,8 @@ These tables cover what the two files use, plus the TLAPS keywords that match Le
 | Meaning | TLA+ | Lean |
 |---|---|---|
 | group the file's definitions | `MODULE Library` ... `====` | `namespace Library` ... `end Library` |
-| use another module | `EXTENDS Naturals, FiniteSets` | |
-| numbers | `Naturals` | `Nat`, `Int` |
+| use another module | `EXTENDS Integers, FiniteSets` | |
+| numbers | `Integers` | `Nat`, `Int` |
 | how many | `Cardinality(loans)` | `loans.length` |
 | values picked from outside | `CONSTANTS`, set in the `.cfg` file | parameters like `(copies : Nat)`, and `variable` |
 | the state | `VARIABLES` | `structure State` |

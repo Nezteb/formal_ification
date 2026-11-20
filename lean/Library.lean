@@ -61,7 +61,7 @@ def Init (copies : Nat) : State := { shelf := copies, loans := [], looked := [] 
 
 /-- The buggy borrow's first step. The patron sees a copy on the shelf. -/
 def Look (p : Nat) (s s' : State) : Prop :=
-  s.shelf > 0 ∧ p ∉ s.loans ∧
+  s.shelf > 0 ∧ p ∉ s.loans ∧ p ∉ s.looked ∧
   s' = { s with looked := p :: s.looked }
 
 /-- The buggy borrow's second step. The patron takes the copy, without
