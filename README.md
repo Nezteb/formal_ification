@@ -12,8 +12,9 @@ A human writes the property as one sentence: we never lend out more copies than 
 |---|---|---|
 | `tla/` TLC | The buggy design fails `NeverOverLent` after 4 steps. The fixed design passes. The buggy design passes `Conservation`, which sounds right but misses the bug. | Covers every ordering, but only for 1 copy and 2 patrons |
 | `lean/` | The same model with the same names. Lean proves the fixed design never over-lends at every size, and proves `Conservation` for the buggy design. | Covers every size, but you write the proof, and it proves only the statement you wrote |
-| `elixir/` StreamData | Random sequences of borrows and returns pass on the buggy code. | Runs the real code, one step at a time |
-| `elixir/` ExUnit | Socrates and Beelzebub borrow the buggy code's 1 copy at the same time. In 8 runs, 5 failed and 3 passed. | Runs the real code, but whether it catches the race depends on scheduling |
+| `elixir/` StreamData (`library_stream_data_test.exs`) | Random sequences of borrows and returns pass on the buggy code. | Runs the real code, one step at a time |
+| `elixir/` ExUnit (`library_concurrent_test.exs`) | Socrates and Beelzebub borrow the buggy code's 1 copy at the same time. It failed 20 of 20 runs on a multi-core laptop, and passed 5 of 5 with 1 scheduler (`ELIXIR_ERL_OPTIONS="+S 1"`), like a 1-CPU CI runner. | Runs the real code, but whether it catches the race depends on the machine |
+| `elixir/` PropEr (`library_propcheck_test.exs`, `library_proper_test.exs`) | Runs two lists of borrows and returns at the same time and checks the results against a model, once through PropCheck and once through plain `:proper`. Both fail on the buggy code and usually shrink to two parallel borrows. | Runs the real code, but needs a model, and shrinking can stop early because the race doesn't happen every run |
 
 ## Running it
 
@@ -40,9 +41,11 @@ mix test
 BUGGY=1 mix test
 ```
 
+PropEr is an Erlang package, so Mix builds it with rebar3. If `mix deps.get` asks for rebar3, run `mix local.rebar --force`.
+
 ## TODO
 
-- [ ] Come up with high-level `SKILL.md` for formal specification/verification and property-based tests (covering TLA+/Lean specifically, with general references to property-based tests without any focus on a particular language like Elixir/TypeScript/Python)
+- [x] Come up with high-level `SKILL.md` (see `.claude/skills/formal-methods/SKILL.md`) for formal specification/verification and property-based tests (covering TLA+/Lean specifically, with general references to property-based tests without any focus on a particular language like Elixir/TypeScript/Python)
 
 ## Links
 
@@ -52,13 +55,11 @@ BUGGY=1 mix test
   - https://en.wikipedia.org/wiki/Safety_and_liveness_properties
   - https://lamport.azurewebsites.net/tla/book-02-08-08.pdf
   - https://learntla.com/core/temporal-logic.html
-  - https://lamport.azurewebsites.net/tla/toolbox.html
   - https://lamport.azurewebsites.net/tla/tools.html
-  - https://lamport.azurewebsites.net/tla/standalone-tools.html?back-link=tools.html
   - https://github.com/QuinnWilton/accord#accord
   - https://github.com/tlaplus/tlapm
     - TLAPS, the TLA+ proof system. Not used in the demo.
-    - Latest pre-release to play with: https://github.com/tlaplus/tlapm/releases/tag/1.6.0-pre
+    - Releases, including the latest pre-release to play with: https://github.com/tlaplus/tlapm/releases
 - Formal verification (Lean)
   - https://en.wikipedia.org/wiki/Formal_verification
   - https://en.wikipedia.org/wiki/Lean_(proof_assistant)
@@ -66,12 +67,14 @@ BUGGY=1 mix test
   - https://lean-lang.org/install/manual/
   - https://lean-lang.org/theorem_proving_in_lean4/tactics.html
   - https://lean-lang.org/theorem_proving_in_lean4/axioms_and_computation.html
-    - Side note: Lean has its own bootstrapped compiler! Example: https://github.com/leanprover/lean4/blob/master/src/Std/Http/Transport.lean
+    - Side note: Lean has its own bootstrapped compiler!
   - https://www.cslib.io/
   - https://github.com/josevalim/lynx#lynx
 - Property-based tests
-  - https://github.com/whatyouhide/stream_data
   - https://stream-data.hexdocs.pm/ExUnitProperties.html
+  - https://github.com/proper-testing/proper
+  - https://proper-testing.github.io/apidocs/proper_statem.html
+  - https://propcheck.hexdocs.pm/PropCheck.StateM.html
 
 ## Future work
 

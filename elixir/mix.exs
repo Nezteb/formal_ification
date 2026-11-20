@@ -17,6 +17,7 @@ defmodule Library.MixProject do
   defp deps do
     [
       {:stream_data, "~> 1.4", only: [:dev, :test]},
+      {:propcheck, "~> 1.5", only: [:dev, :test]},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
     ]

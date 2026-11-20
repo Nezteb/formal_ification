@@ -6,7 +6,9 @@ defmodule Library do
 
   use Agent
 
-  def start_link(copies), do: Agent.start_link(fn -> %{shelf: copies, loans: MapSet.new()} end)
+  def start_link(copies, opts \\ []) do
+    Agent.start_link(fn -> %{shelf: copies, loans: MapSet.new()} end, opts)
+  end
 
   def loans(library), do: Agent.get(library, & &1.loans)
 

@@ -16,7 +16,7 @@ The spec, the proof, and the code match step for step:
 | `Take(p)` | `Take p` | `take/2`, an `Agent.update` |
 | `Borrow(p)` | `Borrow p` | `borrow/2`, one `Agent.get_and_update` |
 | `Return(p)` | `Return p` | `return/2` |
-| `NeverOverLent` | `never_over_lent` | The property test's name |
+| `NeverOverLent` | `never_over_lent` | The StreamData property's name |
 
 ## Slide map
 
@@ -34,7 +34,7 @@ Slide 6 is the easiest to cut.
 | 8 | Does the spec match the code? | The mapping table above, then TLA+ `Take` next to Elixir `take/2` |
 | 9 | Nothing checks the match | What happens if `borrow/2` regresses, and four ways to narrow the gap |
 
-Three backup slides after slide 9 are for questions: "What TLA+ and Lean can and can't do", "TLA+ and Lean, symbol by symbol", and "Time and clocks".
+Four backup slides after slide 9 are for questions: "What TLA+ and Lean can and can't do", "TLA+ and Lean, symbol by symbol", "Time and clocks", and "StreamData vs PropEr".
 
 ### 1. The bug in plain words
 
@@ -59,49 +59,50 @@ property "never lends out more copies than it owns", %{borrow: borrow} do
 end
 ```
 
-StreamData tries 100 random sequences of borrows and returns by 10 patrons, for 1 to 5 copies. On the buggy code it passes, because it runs one step at a time and never puts two borrows side by side. The property is right, but the test can't reach the bad timing.
+StreamData tries 100 random sequences of borrows and returns by 10 patrons, for 1 to 5 copies. On the buggy code it passes, because it runs one step at a time and never puts two borrows side by side. The property is right, but the test can't reach the bad timing. `BUGGY=1 mix test test/library_stream_data_test.exs` shows it passing.
 
-The 2-patron test runs the buggy borrow for Socrates and Beelzebub at the same time, with 1 copy. That's the size TLC checks. Show two runs of `BUGGY=1 mix test`, with the same code and the same command. One passes and one fails. On the presenter's machine, 5 of 8 runs failed and 3 passed. Whether the bug ships depends on how the scheduler happened to order two processes during that CI run.
+The 2-patron test in `test/library_concurrent_test.exs` uses no property library. It runs the buggy borrow for Socrates and Beelzebub at the same time, with 1 copy. That's the size TLC checks. Show two runs with the same code and the same test. The only difference is how many CPU cores the BEAM uses. `ELIXIR_ERL_OPTIONS="+S 1"` gives it 1 scheduler, like a 1-CPU CI runner.
 
-Use these two captured runs on the slide, because you can't choose which one you get on stage. Running it live is optional, and either result works for the slide.
+On the presenter's laptop, it failed 20 of 20 runs with every core and passed 5 of 5 with 1 scheduler. With 1 scheduler, one patron's borrow finishes before the other starts, so the race never happens. On a 1-CPU CI runner, the bug would pass CI and ship.
 
-Green on one run:
+Use these two captured runs on the slide. Running it live is optional, and both commands give the same result every time.
+
+Green on a 1-CPU runner:
 
 ```text
-> BUGGY=1 mix test
-Running ExUnit with seed: 70303, max_cases: 28
+> BUGGY=1 ELIXIR_ERL_OPTIONS="+S 1" mix test test/library_concurrent_test.exs
+Running ExUnit with seed: 756532, max_cases: 2
 
-..
-Finished in 0.03 seconds (0.03s async, 0.00s sync)
+.
+Finished in 0.00 seconds (0.00s async, 0.00s sync)
 
-Result: 2 passed (1 property, 1 test)
+Result: 1 passed
 ```
 
-Red on the next:
+Red on a laptop:
 
 ```text
-> BUGGY=1 mix test
-Running ExUnit with seed: 845148, max_cases: 28
+> BUGGY=1 mix test test/library_concurrent_test.exs
+Running ExUnit with seed: 496702, max_cases: 28
 
-  1) test 2 patrons at once never get more than 1 copy (LibraryTest)
-     test/library_test.exs:25
+  1) test 2 patrons at once never get more than 1 copy (LibraryConcurrentTest)
+     test/library_concurrent_test.exs:12
      Assertion with <= failed
      code:  assert MapSet.size(Library.loans(library)) <= 1
      left:  2
      right: 1
      stacktrace:
-       test/library_test.exs:32: (test)
+       test/library_concurrent_test.exs:19: (test)
 
-.
-Finished in 0.05 seconds (0.05s async, 0.00s sync)
+Finished in 0.01 seconds (0.01s async, 0.00s sync)
 
-Result: 1/2 passed (1/1 property, 0/1 test)
+Result: 0/1 passed
 Failed: 1 test
 ```
 
-In both runs the property test passes, so the two outputs also show that StreamData misses the bug.
+A property test can catch the race if it runs steps in parallel. The "StreamData vs PropEr" backup slide shows one that does, and it fails even with 1 scheduler.
 
-The property test's name, "never lends out more copies than it owns", comes back on slides 4 and 7 as the TLA+ invariant and the Lean theorem.
+The StreamData property's name, "never lends out more copies than it owns", comes back on slides 4 and 7 as the TLA+ invariant and the Lean theorem.
 
 ### 4. The property, owned by a human
 
@@ -289,6 +290,70 @@ The demo has no clock, but real application logic often does. Examples are a hol
 
 Both tools share one limit. If the model says "clocks drift by at most 1 second," every result assumes that. If the real servers drift by 5 seconds, the check or proof says nothing about them. A human has to decide that bound and keep it true in production, the same way a human owns `NeverOverLent`.
 
+### Backup slide: StreamData vs PropEr
+
+Use this to answer "could a property test have caught it?" Two test files check the same property with PropEr, an Erlang property testing tool, and both catch the race on the buggy code. `elixir/test/library_propcheck_test.exs` uses PropCheck, an Elixir wrapper for PropEr. `elixir/test/library_proper_test.exs` calls `:proper` directly. The two files are the same apart from those calls.
+
+| | StreamData | PropEr |
+|---|---|---|
+| What you write | Generators and a `check all` loop | A model of the library: `command`, `next_state`, and `postcondition` |
+| How it runs the code | One step at a time | A few steps, then two lists of steps at the same time |
+| What it checks | Your assertion after each step | That some one-at-a-time order of the parallel steps explains every result |
+| On the buggy borrow | Passes | Fails, and shrinks to the smallest failing case |
+| License | Apache 2.0 | GPL 3, fine for a test-only dependency, but check your company's policy |
+| Setup | Pure Elixir | Erlang, so Mix builds it with rebar3 |
+
+PropCheck's failure from `BUGGY=1 mix test test/library_propcheck_test.exs`. It is the race from slide 5, found in the real code:
+
+```text
+Sequential Start:
+
+Parallel Process 1:
+   var3 = LibraryPropCheckTest.borrow(:socrates)
+
+Parallel Process 2:
+   var5 = LibraryPropCheckTest.borrow(:beelzebub)
+```
+
+The same property in each file:
+
+```elixir
+# library_propcheck_test.exs
+property "2 patrons borrowing in parallel never get more than 1 copy" do
+  forall cmds <- parallel_commands(__MODULE__) do
+    ...
+    result == :ok
+  end
+end
+
+# library_proper_test.exs
+test "2 patrons borrowing in parallel never get more than 1 copy" do
+  property =
+    :proper.forall(:proper_statem.parallel_commands(__MODULE__), fn cmds ->
+      ...
+      result == :ok
+    end)
+
+  assert :proper.quickcheck(property, [:quiet]), inspect(:proper.counterexample())
+end
+```
+
+| | PropCheck | Plain `:proper` |
+|---|---|---|
+| Setup | `use PropCheck` and `use PropCheck.StateM` | None. Call the Erlang modules. |
+| Define the test | `property` and `forall` macros | `:proper.forall/2`. Elixir can't use Erlang's `?FORALL` macro, so it calls the function the macro expands to. |
+| Generators | `oneof/1`, imported | `:proper_types.oneof/1` |
+| Run it | ExUnit runs the `property` | `:proper.quickcheck/2` returns `true` or `false` inside an ExUnit `test` |
+| On failure | Prints the counterexample as Elixir calls | Prints raw Erlang terms, such as `{:set, {:var, 4}, {:call, ...}}` |
+| Between runs | Saves the counterexample to `_build/propcheck.ctex` and replays it first | Saves nothing |
+
+The model is a third copy of the spec, after the TLA+ and the Lean. A human has to read `next_state` and `postcondition` too.
+
+Two things to know before using it:
+
+- The race doesn't happen on every run, so shrinking sometimes stops early and leaves extra steps in the counterexample.
+- After fixing a generator, run `MIX_ENV=test mix propcheck.clean`, so PropCheck stops replaying an old counterexample.
+
 ## Terms
 
 Short definitions of the terms the talk and the files use, with an example from this repo where there is one.
@@ -332,5 +397,4 @@ The talk leaves these out to keep the demo small.
 
 - A working liveness and fairness check, such as "everyone on the waitlist eventually gets the book". The time and clocks backup slide covers the idea.
 - Hold queues, multiple books, and per-patron limits
-- Stateful property testing with interleaved commands, which StreamData doesn't support
 - An example of a spec that disagrees with its code
